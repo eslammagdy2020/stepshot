@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(set:*)",
+      "Shell(pytest:*)",
+      "Shell(Select-Object:*)",
+      "powershell"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}
