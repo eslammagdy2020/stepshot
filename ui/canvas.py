@@ -272,6 +272,11 @@ class AnnotationCanvas(QGraphicsView):
         self._placeholder.hide()
         self.image_changed.emit()
 
+    def _reset_history(self) -> None:
+        self._history = DocumentHistory(
+            self._registry, initial_state=self._capture_document_state()
+        )
+
     def zoom_to_fit(self) -> None:
         if self._background_item is None:
             return
@@ -583,9 +588,7 @@ class AnnotationCanvas(QGraphicsView):
         self.zoom_to_fit()
 
         self._step_counter.reset(start=1)
-        self._history = DocumentHistory(
-            self._registry, initial_state=self._capture_document_state()
-        )
+        self._reset_history()
         self._scene.clearSelection()
         self.selection_changed.emit(None)
         self.image_changed.emit()
@@ -1031,10 +1034,10 @@ class AnnotationCanvas(QGraphicsView):
                 return
         self.selection_changed.emit(None)
 
-    def add_item(self, item) -> None:
+    def add_item(self, item: QGraphicsItem) -> None:
         self._scene.addItem(item)
 
-    def remove_item(self, item) -> None:
+    def remove_item(self, item: QGraphicsItem) -> None:
         self._scene.removeItem(item)
 
     def push_undo_state(self) -> None:
@@ -1119,11 +1122,7 @@ class AnnotationCanvas(QGraphicsView):
 
     def _push_undo_state(self) -> None:
         self._property_timer.stop()
-        try:
-            state = self._capture_document_state()
-        except LookupError as error:
-            logger.warning("Skipped history entry: %s", error)
-            return
+        state = self._capture_document_state()
         result = self._history.apply(state)
         if isinstance(result, RejectedMutation):
             logger.warning("History rejected document state: %s", result.reason)

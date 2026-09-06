@@ -15,9 +15,9 @@ from models.document_history import (
     ImageValue,
     PenRecord,
     RectangleRecord,
+    RECORD_VERSION,
     StepRecord,
     TextRecord,
-    _RECORD_VERSION,
 )
 from ui.graphics_items import (
     ArrowGraphicsItem,
@@ -219,13 +219,13 @@ def _restore_pen(record: PenRecord) -> PenStrokeGraphicsItem:
 
 
 _ADAPTER_SPECS: tuple[tuple[type, AnnotationAdapter], ...] = (
-    (ArrowGraphicsItem, AnnotationAdapter("arrow", (_RECORD_VERSION,), _capture_arrow, _restore_arrow)),
-    (StepMarkerGraphicsItem, AnnotationAdapter("step", (_RECORD_VERSION,), _capture_step, _restore_step)),
-    (TextGraphicsItem, AnnotationAdapter("text", (_RECORD_VERSION,), _capture_text, _restore_text)),
-    (RectangleGraphicsItem, AnnotationAdapter("rectangle", (_RECORD_VERSION,), _capture_rectangle, _restore_rectangle)),
-    (HighlightGraphicsItem, AnnotationAdapter("highlight", (_RECORD_VERSION,), _capture_highlight, _restore_highlight)),
-    (BlurPatchGraphicsItem, AnnotationAdapter("blur", (_RECORD_VERSION,), _capture_blur, _restore_blur)),
-    (PenStrokeGraphicsItem, AnnotationAdapter("pen", (_RECORD_VERSION,), _capture_pen, _restore_pen)),
+    (ArrowGraphicsItem, AnnotationAdapter("arrow", (RECORD_VERSION,), _capture_arrow, _restore_arrow)),
+    (StepMarkerGraphicsItem, AnnotationAdapter("step", (RECORD_VERSION,), _capture_step, _restore_step)),
+    (TextGraphicsItem, AnnotationAdapter("text", (RECORD_VERSION,), _capture_text, _restore_text)),
+    (RectangleGraphicsItem, AnnotationAdapter("rectangle", (RECORD_VERSION,), _capture_rectangle, _restore_rectangle)),
+    (HighlightGraphicsItem, AnnotationAdapter("highlight", (RECORD_VERSION,), _capture_highlight, _restore_highlight)),
+    (BlurPatchGraphicsItem, AnnotationAdapter("blur", (RECORD_VERSION,), _capture_blur, _restore_blur)),
+    (PenStrokeGraphicsItem, AnnotationAdapter("pen", (RECORD_VERSION,), _capture_pen, _restore_pen)),
 )
 
 

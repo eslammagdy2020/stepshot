@@ -11,7 +11,7 @@ class ImageFormat(str, Enum):
     RGBA8888 = "RGBA8888"
 
 
-_RECORD_VERSION = 1
+RECORD_VERSION: int = 1
 
 SUPPORTED_ANNOTATION_KINDS: tuple[str, ...] = (
     "arrow",
@@ -48,13 +48,13 @@ class ImageValue:
 @dataclass(frozen=True)
 class AnnotationRecord:
     kind: str
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
 
 
 @dataclass(frozen=True)
 class ArrowRecord(AnnotationRecord):
     kind: str = "arrow"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     start: tuple[float, float] = (0.0, 0.0)
     end: tuple[float, float] = (0.0, 0.0)
     color_rgba: tuple[int, int, int, int] = (0, 0, 0, 255)
@@ -64,7 +64,7 @@ class ArrowRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class StepRecord(AnnotationRecord):
     kind: str = "step"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     number: int = 1
     color_rgba: tuple[int, int, int, int] = (0, 0, 0, 255)
@@ -74,7 +74,7 @@ class StepRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class TextRecord(AnnotationRecord):
     kind: str = "text"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     text: str = ""
     color_rgba: tuple[int, int, int, int] = (0, 0, 0, 255)
@@ -85,7 +85,7 @@ class TextRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class RectangleRecord(AnnotationRecord):
     kind: str = "rectangle"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     color_rgba: tuple[int, int, int, int] = (0, 0, 0, 255)
@@ -96,7 +96,7 @@ class RectangleRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class HighlightRecord(AnnotationRecord):
     kind: str = "highlight"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     rect: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     color_rgba: tuple[int, int, int, int] = (255, 255, 0, 255)
@@ -106,7 +106,7 @@ class HighlightRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class BlurRecord(AnnotationRecord):
     kind: str = "blur"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     patch: ImageValue | None = None
     mode: str = "blur"
@@ -117,7 +117,7 @@ class BlurRecord(AnnotationRecord):
 @dataclass(frozen=True)
 class PenRecord(AnnotationRecord):
     kind: str = "pen"
-    version: int = _RECORD_VERSION
+    version: int = RECORD_VERSION
     position: tuple[float, float] = (0.0, 0.0)
     points: tuple[tuple[float, float], ...] = ()
     color_rgba: tuple[int, int, int, int] = (0, 0, 0, 255)
@@ -188,7 +188,7 @@ def _placeholder_restore(_record: AnnotationRecord) -> object:
 def _stub_adapter(kind: str) -> AnnotationAdapter:
     return AnnotationAdapter(
         kind=kind,
-        supported_versions=(_RECORD_VERSION,),
+        supported_versions=(RECORD_VERSION,),
         capture=_placeholder_capture,
         restore=_placeholder_restore,
     )
@@ -209,20 +209,16 @@ def _validate_document(
     if document.image is not None:
         if document.image.format is not ImageFormat.RGBA8888:
             return f"unsupported image format: {document.image.format}"
-        if document.image.width == 0 or document.image.height == 0:
-            return "image dimensions must be positive"
     for record in document.annotations:
         if not isinstance(record, AnnotationRecord):
             return f"malformed annotation record: {record!r}"
         if not registry.supports(record.kind, record.version):
             return f"unsupported annotation kind or version: {record.kind} v{record.version}"
         if record.kind == "blur":
-            blur_record = record
-            if blur_record.patch is None:
+            if record.patch is None:
                 return "blur record missing patch"
         if record.kind == "pen":
-            pen_record = record
-            if not pen_record.points:
+            if not record.points:
                 return "pen record has no points"
     return None
 
@@ -313,6 +309,7 @@ __all__ = [
     "MutationResult",
     "PenRecord",
     "RectangleRecord",
+    "RECORD_VERSION",
     "RejectedMutation",
     "StepRecord",
     "TextRecord",

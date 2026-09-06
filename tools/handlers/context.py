@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QGraphicsItem
 
 from models.step_marker import StepCounter
 from ui.graphics_items import TextGraphicsItem
@@ -13,10 +14,10 @@ from ui.graphics_items import TextGraphicsItem
 
 @runtime_checkable
 class HandlerContext(Protocol):
-    def add_item(self, item) -> None:
+    def add_item(self, item: QGraphicsItem) -> None:
         ...
 
-    def remove_item(self, item) -> None:
+    def remove_item(self, item: QGraphicsItem) -> None:
         ...
 
     def push_undo_state(self) -> None:

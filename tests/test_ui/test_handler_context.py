@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QGraphicsItem
 
 from tools.handlers.arrow import ArrowHandler
 from tools.handlers.blur import BlurHandler
@@ -36,10 +37,10 @@ class FakeHandlerContext:
         self.text_edits_finalized = 0
         self.editing_text = False
 
-    def add_item(self, item) -> None:
+    def add_item(self, item: QGraphicsItem) -> None:
         self.items.append(item)
 
-    def remove_item(self, item) -> None:
+    def remove_item(self, item: QGraphicsItem) -> None:
         if item in self.items:
             self.items.remove(item)
         self.removed_items.append(item)
