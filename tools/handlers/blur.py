@@ -20,5 +20,5 @@ class BlurHandler(RectDragHandler):
 
     def _commit(self, rect: QRectF, preview) -> bool:
         del preview
-        self.canvas._apply_blur_region(rect)
+        self.context.apply_blur_region(rect)
         return True

@@ -577,9 +577,9 @@ class MainWindow(QMainWindow):
         self._update_zoom_indicator()
 
     def _scale_zoom(self, factor: float) -> None:
-        if self._canvas._background_item is None:
+        if not self._canvas.has_background():
             return
-        current = self._canvas.transform().m11()
+        current = self._canvas.current_zoom()
         next_scale = current * factor
         if not (MIN_ZOOM <= next_scale <= MAX_ZOOM):
             return
@@ -587,14 +587,9 @@ class MainWindow(QMainWindow):
         self._update_zoom_indicator()
 
     def _update_zoom_indicator(self) -> None:
-        percent = int(round(self._canvas.transform().m11() * 100))
+        percent = int(round(self._canvas.current_zoom() * 100))
         self._zoom_label.setText(f"Zoom: {percent}%")
 
     def _update_annotation_count(self) -> None:
-        background = self._canvas._background_item
-        count = sum(
-            1
-            for item in self._canvas.scene().items()
-            if item is not background
-        )
+        count = self._canvas.annotation_count()
         self._annotation_label.setText(f"{count} annotations")

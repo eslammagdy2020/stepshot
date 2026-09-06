@@ -13,12 +13,13 @@ class PenHandler(ToolHandler):
         self._stroke: PenStrokeGraphicsItem | None = None
 
     def on_press(self, scene_pos: QPointF) -> bool:
+        color, thickness = self.context.get_pen_settings()
         self._stroke = PenStrokeGraphicsItem(
             scene_pos,
-            self.canvas._pen_color,
-            self.canvas._pen_thickness,
+            color,
+            thickness,
         )
-        self.canvas.scene().addItem(self._stroke)
+        self.context.add_item(self._stroke)
         return False
 
     def on_move(self, scene_pos: QPointF) -> None:
@@ -32,13 +33,13 @@ class PenHandler(ToolHandler):
         stroke = self._stroke
         self._stroke = None
         if stroke.path.elementCount() >= 2:
-            self.canvas._push_undo_state()
-            self.canvas.image_changed.emit()
+            self.context.push_undo_state()
+            self.context.emit_image_changed()
         else:
-            self.canvas.scene().removeItem(stroke)
+            self.context.remove_item(stroke)
         return True
 
     def cancel(self) -> None:
         if self._stroke is not None:
-            self.canvas.scene().removeItem(self._stroke)
+            self.context.remove_item(self._stroke)
         self._stroke = None

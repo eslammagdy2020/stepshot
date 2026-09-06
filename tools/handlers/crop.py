@@ -20,4 +20,4 @@ class CropHandler(RectDragHandler):
 
     def _commit(self, rect: QRectF, preview) -> bool:
         del preview
-        return self.canvas._apply_crop(rect)
+        return self.context.apply_crop(rect)

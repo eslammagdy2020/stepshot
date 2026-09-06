@@ -10,15 +10,16 @@ from ui.graphics_items import HighlightGraphicsItem
 
 class HighlightHandler(RectDragHandler):
     def _create_preview(self, scene_pos: QPointF):
+        color, opacity = self.context.get_highlight_settings()
         return HighlightGraphicsItem(
             QRectF(scene_pos, scene_pos),
-            self.canvas._highlight_color,
-            self.canvas._highlight_opacity,
+            color,
+            opacity,
         )
 
     def _commit(self, rect: QRectF, preview) -> bool:
         preview.rect = rect
         preview.prepareGeometryChange()
         preview.update()
-        self.canvas.scene().addItem(preview)
+        self.context.add_item(preview)
         return True

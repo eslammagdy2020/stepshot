@@ -106,12 +106,12 @@ class TestPatchIsNotMovable:
 
         patch = _patches(canvas)[0]
         patch.setSelected(True)
-        undo_depth = len(canvas._undo_stack)
+        undo_depth = len(canvas.history.undo_stack)
 
         canvas.duplicate_selected()
 
         assert len(_patches(canvas)) == 1
-        assert len(canvas._undo_stack) == undo_depth
+        assert len(canvas.history.undo_stack) == undo_depth
 
 
 class TestUndoRedoRestoresPixels:
@@ -170,13 +170,13 @@ class TestSnapshotDoesNotAlias:
         canvas.load_image(gradient_pixmap())
         draw_blur(canvas, qtbot, QPointF(60, 60), QPointF(140, 120))
 
-        snapshot = canvas._snapshot_state()
-        stored = next(entry for entry in snapshot if entry[0] == "blur")[5]
-        captured = QRectF(stored)
+        state = canvas._capture_document_state()
+        blur_record = next(record for record in state.annotations if record.kind == "blur")
+        captured = QRectF(*blur_record.source_rect)
 
         _patches(canvas)[0].source_rect.translate(-25, -25)
 
-        assert stored == captured
+        assert QRectF(*blur_record.source_rect) == captured
 
 
 class TestResetRestoresOriginal:

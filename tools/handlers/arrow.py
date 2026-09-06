@@ -17,13 +17,14 @@ class ArrowHandler(ToolHandler):
 
     def on_press(self, scene_pos: QPointF) -> bool:
         self._start = scene_pos
+        color, thickness = self.context.get_arrow_settings()
         self._preview = ArrowGraphicsItem(
             scene_pos,
             scene_pos,
-            self.canvas._arrow_color,
-            self.canvas._arrow_thickness,
+            color,
+            thickness,
         )
-        self.canvas.scene().addItem(self._preview)
+        self.context.add_item(self._preview)
         return False
 
     def on_move(self, scene_pos: QPointF) -> None:
@@ -43,14 +44,14 @@ class ArrowHandler(ToolHandler):
         dx = scene_pos.x() - start.x()
         dy = scene_pos.y() - start.y()
         if dx * dx + dy * dy >= self.MIN_LENGTH_SQ:
-            self.canvas._push_undo_state()
-            self.canvas.image_changed.emit()
+            self.context.push_undo_state()
+            self.context.emit_image_changed()
         else:
-            self.canvas.scene().removeItem(preview)
+            self.context.remove_item(preview)
         return True
 
     def cancel(self) -> None:
         if self._preview is not None:
-            self.canvas.scene().removeItem(self._preview)
+            self.context.remove_item(self._preview)
         self._preview = None
         self._start = None

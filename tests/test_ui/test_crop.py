@@ -68,11 +68,11 @@ class TestCropNoOp:
         canvas.resize(800, 600)
         canvas.load_image(sample_pixmap)
         before_bg = canvas._background_item.pixmap()
-        before_count = len(canvas._undo_stack)
+        before_count = len(canvas.history.undo_stack)
 
         assert not canvas._apply_crop(QRectF(700, 500, 100, 100))
         assert canvas._background_item.pixmap().cacheKey() == before_bg.cacheKey()
-        assert len(canvas._undo_stack) == before_count
+        assert len(canvas.history.undo_stack) == before_count
 
     def test_invalid_crop_via_handler_creates_no_history(self, qapp, qtbot, sample_pixmap):
         from ui.canvas import AnnotationCanvas
@@ -83,7 +83,7 @@ class TestCropNoOp:
         canvas.load_image(sample_pixmap)
         canvas.set_tool_mode(ToolMode.CROP)
         before_bg = canvas._background_item.pixmap()
-        before_count = len(canvas._undo_stack)
+        before_count = len(canvas.history.undo_stack)
         emitted: list[bool] = []
         canvas.image_changed.connect(lambda: emitted.append(True))
 
@@ -92,7 +92,7 @@ class TestCropNoOp:
         drag_on_canvas(canvas, qapp, start, end)
 
         assert canvas._background_item.pixmap().cacheKey() == before_bg.cacheKey()
-        assert len(canvas._undo_stack) == before_count
+        assert len(canvas.history.undo_stack) == before_count
         assert emitted == []
 
 
@@ -195,11 +195,11 @@ class TestCropHistory:
         canvas.resize(800, 600)
         canvas.load_image(sample_pixmap)
         canvas.set_tool_mode(ToolMode.CROP)
-        before_count = len(canvas._undo_stack)
+        before_count = len(canvas.history.undo_stack)
 
         start = QPointF(canvas.mapFromScene(QPointF(100, 100)))
         end = QPointF(canvas.mapFromScene(QPointF(300, 250)))
         drag_on_canvas(canvas, qapp, start, end)
 
-        assert len(canvas._undo_stack) == before_count + 1
+        assert len(canvas.history.undo_stack) == before_count + 1
         assert abs(canvas._background_item.pixmap().width() - 200) <= 1

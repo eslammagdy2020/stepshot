@@ -6,7 +6,7 @@ resize) → export PNG/JPG or clipboard.
 
 ## Status
 
-**All planned phases (1–16) complete.** Last verified: `pytest` = **202 passed** under
+**All planned phases (1–16) complete.** Last verified: `pytest` = **292 passed** under
 `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 26 passed; frozen Windows build
 `dist\StepShot.exe` (~248.6 MB) passes its `--smoke-test` round-trip with exit code 0.
 See `upgrade.md` for the per-phase history and decisions. Future work should be tracked in a new plan file.
@@ -15,7 +15,7 @@ See `upgrade.md` for the per-phase history and decisions. Future work should be 
 
 ```powershell
 pip install -r requirements-test.txt            # includes requirements.txt
-pytest                                          # 202 tests, ~4s — the only verification gate
+pytest                                          # 292 tests, ~5s — the only verification gate
 pytest -m acceptance                            # 26 PRD acceptance tests
 python main.py                                  # run from source
 dist\StepShot.exe                               # run the frozen build
@@ -64,8 +64,10 @@ mouse-transparent.
 `self._handlers[mode]`; a handler returning `True` from `on_press`/`on_release` means "committed".
 `RectDragHandler` (base.py) does the shared drag/preview flow. `_commit()` now returns `bool` — `True`
 means "push undo + emit image_changed", `False` means "no history" (used by `CropHandler` to skip both
-when the gesture is invalid). Handlers legitimately reach into canvas internals (`_apply_blur_region`,
-`_apply_crop`, `_finalize_text_edit`, `_text_item_at`); that is the intended design, not a leak to fix.
+when the gesture is invalid). Handlers interact with the canvas only through the `HandlerContext` protocol
+(`tools.handlers.context`): the canvas implements this interface, exposing scene operations, undo/history,
+settings getters, blur/crop application, and text-editing lifecycle. This decouples handler logic from
+canvas internals.
 
 `tools/*_tool.py` are thin `…ToolSettings` dataclasses with `defaults()` only. No logic lives there.
 
@@ -85,12 +87,18 @@ when the gesture is invalid). Handlers legitimately reach into canvas internals 
 
 ## Undo / snapshots
 
-`_snapshot_state()` returns a list of tuples that **always starts with `("__meta__", step_counter)` and
-`("__bg__", background_pixmap)`** sentinels; `_restore_state()` depends on both. Preserve them when editing
-snapshot code, and add a matching branch on both sides for any new item type.
+Undo/redo is managed by `models.document_history.DocumentHistory`. `AnnotationCanvas.history` exposes the
+history instance; its `undo_stack` and `redo_stack` properties return tuples of `DocumentState`. The canvas
+captures state via `_capture_document_state()` (producing a `DocumentState` with `ImageValue`, annotations,
+and step counter) and restores it via `_restore_document_state()`. History holds at most 50 undo entries
+(51 `DocumentState`s including the current one).
 
-`_push_undo_state()` caps history at 50 entries and stops `_property_timer`. Property setters call
-`_schedule_property_undo()` instead (400 ms coalescing) so a slider drag is one undo step.
+`_push_undo_state()` stops `_property_timer`, captures the current document state, and applies it to
+`DocumentHistory`. Property setters call `_schedule_property_undo()` instead (400 ms coalescing) so a slider
+drag is one undo step. Every gesture start — tool `on_press` in `mousePressEvent`, Select-tool drag in
+`_begin_drag_tracking()`, and resize-handle grabs in `_begin_resize_tracking()` — calls
+`_flush_pending_property_undo()` first, so the 400 ms timer can never fire mid-gesture and capture an
+in-flight drag preview or intermediate geometry into a history entry.
 
 **Move and resize are both in undo history** since Phase 10 / Phase 13. A Select-tool move pushes one
 state on `mouseReleaseEvent` if any item's `pos()` changed; a resize gesture pushes one state on

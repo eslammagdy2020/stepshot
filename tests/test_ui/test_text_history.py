@@ -71,13 +71,13 @@ class TestCreateTextHistory:
     def test_empty_new_text_leaves_nothing_and_no_history(self, qapp, qtbot, sample_pixmap):
         canvas = _make_canvas(qtbot, sample_pixmap)
 
-        before_len = len(canvas._undo_stack)
+        before_len = len(canvas.history.undo_stack)
         left_press(canvas.viewport(), qtbot, canvas.mapFromScene(QPointF(50, 50)))
         # Finalize without typing anything.
         left_press(canvas.viewport(), qtbot, canvas.mapFromScene(QPointF(400, 400)))
 
         assert len(_text_items(canvas)) == 0
-        assert len(canvas._undo_stack) == before_len
+        assert len(canvas.history.undo_stack) == before_len
 
 
 class TestEditTextHistory:
@@ -106,11 +106,11 @@ class TestEditTextHistory:
         add_text_annotation(canvas, QPointF(60, 60), "Same")
         item = _text_items(canvas)[0]
 
-        before_len = len(canvas._undo_stack)
+        before_len = len(canvas.history.undo_stack)
         canvas._start_text_edit(item, is_new=False)
         canvas._finalize_text_edit()
 
-        assert len(canvas._undo_stack) == before_len
+        assert len(canvas.history.undo_stack) == before_len
         assert _text_items(canvas)[0].toPlainText() == "Same"
 
     def test_double_click_routes_through_canvas(self, qapp, qtbot, sample_pixmap):
@@ -183,9 +183,9 @@ class TestUndoWhileTextIsEditing:
         canvas._start_text_edit(text, is_new=True)
         assert canvas._editing_text_item is text
 
-        before_stack_depth = len(canvas._undo_stack)
+        before_stack_depth = len(canvas.history.undo_stack)
         canvas.undo()
-        after_stack_depth = len(canvas._undo_stack)
+        after_stack_depth = len(canvas.history.undo_stack)
 
         assert after_stack_depth == before_stack_depth
         assert next(
@@ -205,8 +205,8 @@ class TestUndoWhileTextIsEditing:
         place_step_marker(canvas, qtbot, QPointF(50, 50))
         place_step_marker(canvas, qtbot, QPointF(120, 50))
         canvas.undo()
-        assert len(canvas._redo_stack) == 1
-        assert len(canvas._undo_stack) == 2
+        assert len(canvas.history.redo_stack) == 1
+        assert len(canvas.history.undo_stack) == 1
 
         add_text_annotation(canvas, QPointF(80, 200), "note")
         text = next(
@@ -215,9 +215,9 @@ class TestUndoWhileTextIsEditing:
         canvas._start_text_edit(text, is_new=True)
         assert canvas._editing_text_item is text
 
-        undo_before = len(canvas._undo_stack)
-        redo_before = len(canvas._redo_stack)
+        undo_before = len(canvas.history.undo_stack)
+        redo_before = len(canvas.history.redo_stack)
         canvas.redo()
-        assert len(canvas._undo_stack) == undo_before
-        assert len(canvas._redo_stack) == redo_before
+        assert len(canvas.history.undo_stack) == undo_before
+        assert len(canvas.history.redo_stack) == redo_before
         assert canvas._editing_text_item is text

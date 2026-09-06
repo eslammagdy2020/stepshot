@@ -13,6 +13,16 @@ class ImageFormat(str, Enum):
 
 _RECORD_VERSION = 1
 
+SUPPORTED_ANNOTATION_KINDS: tuple[str, ...] = (
+    "arrow",
+    "step",
+    "text",
+    "rectangle",
+    "highlight",
+    "blur",
+    "pen",
+)
+
 
 @dataclass(frozen=True)
 class ImageValue:
@@ -22,6 +32,17 @@ class ImageValue:
     format: ImageFormat
     stride: int
     device_pixel_ratio: float = 1.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "pixels", bytes(self.pixels))
+        if self.width <= 0 or self.height <= 0 or self.stride < 0:
+            raise ValueError("image dimensions must be positive and stride non-negative")
+        if self.stride < self.width * 4:
+            raise ValueError("image stride is too small for RGBA8888 pixels")
+        if len(self.pixels) < self.stride * self.height:
+            raise ValueError("image pixels do not cover the image stride")
+        if self.device_pixel_ratio <= 0:
+            raise ValueError("device pixel ratio must be positive")
 
 
 @dataclass(frozen=True)
@@ -151,9 +172,6 @@ class AnnotationAdapterRegistry:
     def adapter(self, kind: str) -> AnnotationAdapter | None:
         return self._adapters.get(kind)
 
-    def kinds(self) -> tuple[str, ...]:
-        return tuple(sorted(self._adapters))
-
 
 def _placeholder_capture(_annotation: object) -> AnnotationRecord:
     raise NotImplementedError(
@@ -178,25 +196,34 @@ def _stub_adapter(kind: str) -> AnnotationAdapter:
 
 def build_default_registry() -> AnnotationAdapterRegistry:
     return AnnotationAdapterRegistry(
-        [
-            _stub_adapter("arrow"),
-            _stub_adapter("step"),
-            _stub_adapter("text"),
-            _stub_adapter("rectangle"),
-            _stub_adapter("highlight"),
-            _stub_adapter("blur"),
-            _stub_adapter("pen"),
-        ]
+        [_stub_adapter(kind) for kind in SUPPORTED_ANNOTATION_KINDS]
     )
 
 
-def _validate_records(
-    records: tuple[AnnotationRecord, ...],
+def _validate_document(
+    document: DocumentState,
     registry: AnnotationAdapterRegistry,
 ) -> str | None:
-    for record in records:
+    if document.version != DocumentHistory.DOCUMENT_VERSION:
+        return f"unsupported document version: {document.version}"
+    if document.image is not None:
+        if document.image.format is not ImageFormat.RGBA8888:
+            return f"unsupported image format: {document.image.format}"
+        if document.image.width == 0 or document.image.height == 0:
+            return "image dimensions must be positive"
+    for record in document.annotations:
+        if not isinstance(record, AnnotationRecord):
+            return f"malformed annotation record: {record!r}"
         if not registry.supports(record.kind, record.version):
             return f"unsupported annotation kind or version: {record.kind} v{record.version}"
+        if record.kind == "blur":
+            blur_record = record
+            if blur_record.patch is None:
+                return "blur record missing patch"
+        if record.kind == "pen":
+            pen_record = record
+            if not pen_record.points:
+                return "pen record has no points"
     return None
 
 
@@ -204,10 +231,18 @@ class DocumentHistory:
     DOCUMENT_VERSION: int = 1
     HISTORY_CAP: int = 50
 
-    def __init__(self, registry: AnnotationAdapterRegistry) -> None:
+    def __init__(
+        self,
+        registry: AnnotationAdapterRegistry,
+        initial_state: DocumentState | None = None,
+    ) -> None:
         self._registry = registry
-        self._current: DocumentState = empty_document()
-        self._history: list[DocumentState] = [self._current]
+        seed = initial_state if initial_state is not None else empty_document()
+        rejection = _validate_document(seed, registry)
+        if rejection is not None:
+            raise ValueError(f"invalid initial document state: {rejection}")
+        self._current: DocumentState = seed
+        self._history: list[DocumentState] = [seed]
         self._cursor: int = 0
 
     @property
@@ -231,7 +266,7 @@ class DocumentHistory:
         return tuple(self._history[self._cursor + 1 :])
 
     def apply(self, new_state: DocumentState) -> MutationResult:
-        rejection = _validate_records(new_state.annotations, self._registry)
+        rejection = _validate_document(new_state, self._registry)
         if rejection is not None:
             return RejectedMutation(reason=rejection)
         if new_state == self._current and self._cursor == len(self._history) - 1:
@@ -246,9 +281,6 @@ class DocumentHistory:
         return AcceptedMutation(state=new_state)
 
     def restore_snapshot(self, snapshot: DocumentState) -> MutationResult:
-        rejection = _validate_records(snapshot.annotations, self._registry)
-        if rejection is not None:
-            return RejectedMutation(reason=rejection)
         return self.apply(snapshot)
 
     def undo(self) -> DocumentState | None:
@@ -284,6 +316,7 @@ __all__ = [
     "RejectedMutation",
     "StepRecord",
     "TextRecord",
+    "SUPPORTED_ANNOTATION_KINDS",
     "build_default_registry",
     "empty_document",
 ]

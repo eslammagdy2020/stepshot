@@ -108,9 +108,9 @@ class TestAnnotationCanvas:
         QApplication.processEvents()
         assert text.isSelected()
 
-        before_undo = len(canvas._undo_stack)
+        before_undo = len(canvas.history.undo_stack)
         canvas.delete_selected()
-        assert len(canvas._undo_stack) == before_undo + 1
+        assert len(canvas.history.undo_stack) == before_undo + 1
         remaining = [i for i in canvas.scene().items() if isinstance(i, TextGraphicsItem)]
         assert remaining == []
 
@@ -451,11 +451,11 @@ class TestUndoRedo:
 
         for x in range(50, 50 + 50 * 8, 8):
             place_step_marker(canvas, qtbot, QPointF(x, 100))
-        assert len(canvas._undo_stack) == 50
+        assert len(canvas.history.undo_stack) == 50
 
         for x in range(450, 450 + 10 * 8, 8):
             place_step_marker(canvas, qtbot, QPointF(x, 100))
-        assert len(canvas._undo_stack) == 50
+        assert len(canvas.history.undo_stack) == 50
 
     def test_redo_clears_after_new_action(self, qapp, qtbot, sample_pixmap):
         canvas = AnnotationCanvas()
@@ -466,10 +466,10 @@ class TestUndoRedo:
         place_step_marker(canvas, qtbot, QPointF(50, 100))
         place_step_marker(canvas, qtbot, QPointF(100, 100))
         canvas.undo()
-        assert len(canvas._redo_stack) == 1
+        assert len(canvas.history.redo_stack) == 1
 
         place_step_marker(canvas, qtbot, QPointF(150, 100))
-        assert len(canvas._redo_stack) == 0
+        assert len(canvas.history.redo_stack) == 0
 
     def test_toolbar_shortcuts_match_prd(self, qapp, qtbot):
         toolbar = TopToolBar()

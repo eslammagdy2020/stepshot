@@ -10,13 +10,14 @@ from ui.graphics_items import StepMarkerGraphicsItem
 
 class StepHandler(ToolHandler):
     def on_press(self, scene_pos: QPointF) -> bool:
+        color, size, counter = self.context.get_step_settings()
         marker = StepMarkerGraphicsItem(
             scene_pos,
-            self.canvas._step_counter.next_number,
-            self.canvas._step_color,
-            self.canvas._step_size,
+            counter.next_number,
+            color,
+            size,
         )
-        self.canvas.scene().addItem(marker)
-        self.canvas._push_undo_state()
-        self.canvas.image_changed.emit()
+        self.context.add_item(marker)
+        self.context.push_undo_state()
+        self.context.emit_image_changed()
         return True

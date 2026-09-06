@@ -99,6 +99,29 @@ class TestImageValue:
         with pytest.raises((AttributeError, TypeError)):
             image.pixels = b""  # type: ignore[misc]
 
+    def test_copies_mutable_pixel_input(self):
+        pixels = bytearray(bytes((10, 20, 30, 255)) * (4 * 3))
+        image = ImageValue(
+            pixels=pixels,
+            width=4,
+            height=3,
+            format=ImageFormat.RGBA8888,
+            stride=16,
+        )
+        pixels[0] = 255
+        assert type(image.pixels) is bytes
+        assert image.pixels[0] == 10
+
+    def test_rejects_invalid_metadata(self):
+        with pytest.raises(ValueError, match="image dimensions"):
+            ImageValue(
+                pixels=b"",
+                width=-1,
+                height=2,
+                format=ImageFormat.RGBA8888,
+                stride=0,
+            )
+
     def test_strides_and_format_are_preserved_without_qt(self):
         image = _rgba_image(width=5, height=7, device_pixel_ratio=2.0)
         assert image.stride == 20
@@ -345,6 +368,24 @@ class TestAtomicRestoration:
         assert isinstance(result, RejectedMutation)
         assert history.current == empty_document()
 
+    def test_apply_rejects_malformed_document_and_preserves_history(self):
+        history = DocumentHistory(_registry())
+        valid = _state_with(ArrowRecord())
+        history.apply(valid)
+        before = history.current
+        undo_count = len(history.undo_stack)
+        invalid = DocumentState(
+            version=999,
+            image=_rgba_image(),
+        )
+
+        result = history.apply(invalid)
+
+        assert isinstance(result, RejectedMutation)
+        assert history.current == before
+        assert len(history.undo_stack) == undo_count
+        assert history.can_redo is False
+
     def test_restore_leaves_state_unchanged_on_rejection(self):
         history = DocumentHistory(_registry())
         arrow = ArrowRecord(start=(0.0, 0.0), end=(1.0, 1.0), color_rgba=(0, 0, 0, 255), thickness=1)
@@ -414,3 +455,47 @@ class TestDefaultRegistry:
     def test_does_not_support_unknown_versions(self):
         registry = build_default_registry()
         assert registry.supports("arrow", 99) is False
+
+
+class TestInitialSeed:
+    def test_seeded_history_starts_at_initial_state(self):
+        seed = _state_with()
+        history = DocumentHistory(_registry(), initial_state=seed)
+        assert history.current == seed
+        assert history.can_undo is False
+        assert history.can_redo is False
+
+    def test_seeded_history_never_undoes_below_seed(self):
+        seed = _state_with()
+        history = DocumentHistory(_registry(), initial_state=seed)
+        history.apply(
+            _state_with(
+                ArrowRecord(start=(0.0, 0.0), end=(1.0, 1.0), color_rgba=(0, 0, 0, 255), thickness=1)
+            )
+        )
+        assert history.undo() == seed
+        assert history.undo() is None
+        assert history.current == seed
+
+    def test_invalid_seed_is_rejected_at_construction(self):
+        registry = AnnotationAdapterRegistry([_stub_adapter("arrow")])
+        with pytest.raises(ValueError):
+            DocumentHistory(
+                registry,
+                initial_state=_state_with(
+                    StepRecord(position=(0.0, 0.0), number=1, color_rgba=(0, 0, 0, 255), size=28)
+                ),
+            )
+
+
+class TestMalformedRecords:
+    def test_apply_rejects_non_record_annotations(self):
+        history = DocumentHistory(_registry())
+        bogus = DocumentState(
+            version=DocumentHistory.DOCUMENT_VERSION,
+            image=None,
+            annotations=("arrow",),
+        )
+        result = history.apply(bogus)
+        assert isinstance(result, RejectedMutation)
+        assert history.current == empty_document()

@@ -58,11 +58,11 @@ class TestDragCommitsOneUndo:
         canvas = make_canvas(qtbot)
         arrow = add_arrow(canvas)
         select_only(canvas, arrow)
-        depth = len(canvas._undo_stack)
+        depth = len(canvas.history.undo_stack)
 
         drag_item_on_canvas(canvas, qapp, QPointF(60, 60), QPointF(120, 120))
 
-        assert len(canvas._undo_stack) == depth + 1
+        assert len(canvas.history.undo_stack) == depth + 1
 
     def test_undo_restores_original_position(self, qapp, qtbot):
         canvas = make_canvas(qtbot)
@@ -95,11 +95,11 @@ class TestClickWithoutMovement:
         canvas = make_canvas(qtbot)
         arrow = add_arrow(canvas)
         select_only(canvas, arrow)
-        depth = len(canvas._undo_stack)
+        depth = len(canvas.history.undo_stack)
 
         drag_item_on_canvas(canvas, qapp, QPointF(60, 60), QPointF(60, 60))
 
-        assert len(canvas._undo_stack) == depth
+        assert len(canvas.history.undo_stack) == depth
         assert QPointF(arrow.pos()) == QPointF(0, 0)
 
 
@@ -125,9 +125,9 @@ class TestPropertyEditOrderAroundMove:
 class TestAllMovableFamiliesDrag:
     def _drag_and_assert(self, canvas, qapp, item) -> None:
         select_only(canvas, item)
-        depth = len(canvas._undo_stack)
+        depth = len(canvas.history.undo_stack)
         drag_item_on_canvas(canvas, qapp, QPointF(70, 70), QPointF(130, 130))
-        assert len(canvas._undo_stack) == depth + 1
+        assert len(canvas.history.undo_stack) == depth + 1
 
     def test_rectangle_drag_is_undoable(self, qapp, qtbot):
         canvas = make_canvas(qtbot)

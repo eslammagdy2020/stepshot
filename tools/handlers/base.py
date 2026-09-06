@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF
 
+from tools.handlers.context import HandlerContext
+
 
 class ToolHandler:
-    def attach(self, canvas) -> None:
-        self.canvas = canvas
+    def attach(self, context: HandlerContext) -> None:
+        self.context = context
 
     def on_press(self, scene_pos: QPointF) -> bool:
         del scene_pos
@@ -34,7 +36,7 @@ class RectDragHandler(ToolHandler):
     def on_press(self, scene_pos: QPointF) -> bool:
         self._start = scene_pos
         self._preview = self._create_preview(scene_pos)
-        self.canvas.scene().addItem(self._preview)
+        self.context.add_item(self._preview)
         return False
 
     def on_move(self, scene_pos: QPointF) -> None:
@@ -53,16 +55,16 @@ class RectDragHandler(ToolHandler):
         preview = self._preview
         self._preview = None
         self._start = None
-        self.canvas.scene().removeItem(preview)
+        self.context.remove_item(preview)
         if rect.width() >= self.MIN_SIZE and rect.height() >= self.MIN_SIZE:
             if self._commit(rect, preview):
-                self.canvas._push_undo_state()
-                self.canvas.image_changed.emit()
+                self.context.push_undo_state()
+                self.context.emit_image_changed()
         return True
 
     def cancel(self) -> None:
         if self._preview is not None:
-            self.canvas.scene().removeItem(self._preview)
+            self.context.remove_item(self._preview)
         self._preview = None
         self._start = None
 

@@ -148,35 +148,80 @@ class TestUndoCoalescing:
         canvas.scene().addItem(highlight)
         highlight.setSelected(True)
         canvas._push_undo_state()
-        baseline = len(canvas._undo_stack)
+        baseline = len(canvas.history.undo_stack)
 
         for opacity in range(20, 256, 5):
             canvas.set_highlight_opacity(opacity)
 
         qtbot.wait(500)
-        assert len(canvas._undo_stack) == baseline + 1
+        assert len(canvas.history.undo_stack) == baseline + 1
 
     def test_undo_stack_is_capped(self, qapp, qtbot, sample_pixmap):
+        from ui.graphics_items import StepMarkerGraphicsItem
+        from PySide6.QtCore import QPointF
+
         canvas = AnnotationCanvas()
         qtbot.addWidget(canvas)
         canvas.load_image(sample_pixmap)
 
-        for _ in range(200):
+        for i in range(200):
+            marker = StepMarkerGraphicsItem(QPointF(i * 10, i * 10), i + 1, QColor(255, 0, 0), 28)
+            canvas.scene().addItem(marker)
             canvas._push_undo_state()
 
-        assert len(canvas._undo_stack) <= 50
+        assert len(canvas.history.undo_stack) <= 50
+
+    def test_pending_property_undo_flushes_before_gesture(
+        self, qapp, qtbot, sample_pixmap
+    ):
+        from tests.conftest import left_move, left_press, left_release
+        from ui.graphics_items import RectangleGraphicsItem
+
+        canvas = AnnotationCanvas()
+        qtbot.addWidget(canvas)
+        canvas.resize(800, 600)
+        canvas.load_image(sample_pixmap)
+
+        rect = RectangleGraphicsItem(QRectF(20, 20, 60, 40), QColor(255, 0, 0), 3, False)
+        canvas.scene().addItem(rect)
+        rect.setSelected(True)
+        canvas._push_undo_state()
+
+        canvas.set_rectangle_thickness(5)
+        assert canvas._property_timer.isActive()
+
+        canvas.set_tool_mode(ToolMode.RECTANGLE)
+        left_press(canvas.viewport(), qtbot, canvas.mapFromScene(QPointF(300, 300)))
+        left_move(canvas.viewport(), qtbot, canvas.mapFromScene(QPointF(400, 380)))
+
+        assert not canvas._property_timer.isActive()
+
+        qtbot.wait(500)
+
+        rectangles = [
+            r for r in canvas.history.current.annotations if r.kind == "rectangle"
+        ]
+        assert len(rectangles) == 1
+        assert rectangles[0].thickness == 5
+
+        left_release(canvas.viewport(), qtbot, canvas.mapFromScene(QPointF(400, 380)))
+
+        rectangles = [
+            r for r in canvas.history.current.annotations if r.kind == "rectangle"
+        ]
+        assert len(rectangles) == 2
 
 
 class TestBackgroundInSnapshots:
-    def test_snapshot_stores_background_pixmap(self, qapp, qtbot, sample_pixmap):
+    def test_snapshot_stores_background_image(self, qapp, qtbot, sample_pixmap):
         canvas = AnnotationCanvas()
         qtbot.addWidget(canvas)
         canvas.load_image(sample_pixmap)
 
-        snapshot = canvas._snapshot_state()
-        bg_entries = [e for e in snapshot if e[0] == "__bg__"]
-        assert len(bg_entries) == 1
-        assert not bg_entries[0][1].isNull()
+        state = canvas._capture_document_state()
+        assert state.image is not None
+        assert state.image.width > 0
+        assert state.image.height > 0
 
     def test_undo_restores_swapped_background(self, qapp, qtbot, sample_pixmap):
         canvas = AnnotationCanvas()
@@ -243,6 +288,30 @@ class TestAnnotationCanvasUndoRedo:
 
         canvas.redo()
         assert len([i for i in canvas.scene().items() if isinstance(i, ArrowGraphicsItem)]) == 0
+
+    def test_rejected_apply_does_not_clear_redo_stack(self, qapp, qtbot, sample_pixmap):
+        from models.document_history import DocumentState, RejectedMutation
+
+        canvas = AnnotationCanvas()
+        qtbot.addWidget(canvas)
+        canvas.load_image(sample_pixmap)
+
+        draw_arrow_on_canvas(canvas, qtbot, QPointF(10, 10), QPointF(100, 100))
+        canvas.undo()
+        assert canvas.history.can_redo
+
+        current = canvas.history.current
+        bad_state = DocumentState(
+            version=1,
+            image=current.image,
+            annotations=current.annotations + (
+                type("BadRecord", (), {"kind": "unknown", "version": 999})(),
+            ),
+            step_counter=current.step_counter,
+        )
+        result = canvas.history.apply(bad_state)
+        assert isinstance(result, RejectedMutation)
+        assert canvas.history.can_redo
 
     def test_step_counter_restores_after_undo(self, qapp, qtbot, sample_pixmap):
         canvas = AnnotationCanvas()

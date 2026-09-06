@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from enum import Enum, auto
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
@@ -20,6 +21,13 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
+from models.document_history import (
+    AnnotationRecord,
+    DocumentHistory,
+    DocumentState,
+    ImageValue,
+    RejectedMutation,
+)
 from models.step_marker import StepCounter
 from services import settings_service
 from services.image_effects import BlurMode, apply_region_effect
@@ -31,6 +39,14 @@ from tools.pen_tool import PenToolSettings
 from tools.rectangle_tool import RectangleToolSettings
 from tools.step_tool import StepToolSettings
 from tools.text_tool import TextToolSettings
+from ui.annotation_adapters import (
+    build_canvas_registry,
+    capture_annotation,
+    capturable_types,
+    image_value_to_qpixmap,
+    qpixmap_to_image_value,
+    restore_annotation,
+)
 from ui.graphics_items import (
     ArrowGraphicsItem,
     BlurPatchGraphicsItem,
@@ -41,6 +57,10 @@ from ui.graphics_items import (
     TextGraphicsItem,
 )
 from ui.resize_handles import Handle, HandleRole, ResizeHandleLayer
+
+logger = logging.getLogger("stepshot")
+
+_CAPTURABLE_TYPES = capturable_types()
 
 
 class ToolMode(Enum):
@@ -150,8 +170,10 @@ class AnnotationCanvas(QGraphicsView):
             settings_service.load("pen/thickness", pen_defaults.thickness)
         )
 
-        self._undo_stack: list[list] = []
-        self._redo_stack: list[list] = []
+        self._registry = build_canvas_registry()
+        self._history = DocumentHistory(self._registry)
+        self._bg_image_value = None
+        self._bg_image_cache_key: int | None = None
         self._original_pixmap: QPixmap | None = None
         self._editing_text_item: TextGraphicsItem | None = None
         self._editing_text_before: str | None = None
@@ -166,7 +188,6 @@ class AnnotationCanvas(QGraphicsView):
         self._resize_item: ArrowGraphicsItem | RectangleGraphicsItem | HighlightGraphicsItem | None = None
         self._scene.selectionChanged.connect(self._refresh_resize_layer)
 
-        self._undo_cap = 50
         self._property_timer = QTimer(self)
         self._property_timer.setSingleShot(True)
         self._property_timer.setInterval(400)
@@ -232,7 +253,10 @@ class AnnotationCanvas(QGraphicsView):
             self._scene.clearSelection()
 
     def load_image(self, pixmap: QPixmap) -> None:
+        if pixmap.isNull():
+            return
         self._finalize_text_edit()
+        self._property_timer.stop()
         self._cancel_resize_tracking()
         self._original_pixmap = pixmap.copy()
         self._scene.clear()
@@ -241,10 +265,10 @@ class AnnotationCanvas(QGraphicsView):
         self._scene.setSceneRect(self._background_item.boundingRect())
         self.zoom_to_fit()
         self._step_counter.reset()
-        self._undo_stack.clear()
-        self._redo_stack.clear()
         self._active_handler = None
-        self._push_undo_state()
+        self._history = DocumentHistory(
+            self._registry, initial_state=self._capture_document_state()
+        )
         self._placeholder.hide()
         self.image_changed.emit()
 
@@ -525,10 +549,26 @@ class AnnotationCanvas(QGraphicsView):
     def has_screenshot(self) -> bool:
         return self._original_pixmap is not None
 
+    def annotation_count(self) -> int:
+        if self._background_item is None:
+            return 0
+        return sum(
+            1
+            for item in self._scene.items()
+            if item is not self._background_item
+        )
+
+    def current_zoom(self) -> float:
+        return self.transform().m11()
+
+    def has_background(self) -> bool:
+        return self._background_item is not None
+
     def reset_to_original(self) -> bool:
         if self._original_pixmap is None or self._background_item is None:
             return False
 
+        self._property_timer.stop()
         self._finalize_text_edit()
         self._cancel_resize_tracking()
         for item in list(self._scene.items()):
@@ -543,9 +583,9 @@ class AnnotationCanvas(QGraphicsView):
         self.zoom_to_fit()
 
         self._step_counter.reset(start=1)
-        self._undo_stack.clear()
-        self._redo_stack.clear()
-        self._push_undo_state()
+        self._history = DocumentHistory(
+            self._registry, initial_state=self._capture_document_state()
+        )
         self._scene.clearSelection()
         self.selection_changed.emit(None)
         self.image_changed.emit()
@@ -607,22 +647,18 @@ class AnnotationCanvas(QGraphicsView):
         self._cancel_resize_tracking()
         if self._editing_text_item is not None:
             return
-        if len(self._undo_stack) <= 1:
-            return
-        current = self._undo_stack.pop()
-        self._redo_stack.append(current)
-        self._restore_state(self._undo_stack[-1])
+        state = self._history.undo()
+        if state is not None:
+            self._restore_document_state(state)
 
     def redo(self) -> None:
         self._property_timer.stop()
         self._cancel_resize_tracking()
         if self._editing_text_item is not None:
             return
-        if not self._redo_stack:
-            return
-        state = self._redo_stack.pop()
-        self._undo_stack.append(state)
-        self._restore_state(state)
+        state = self._history.redo()
+        if state is not None:
+            self._restore_document_state(state)
 
     def delete_selected(self) -> None:
         selected = self._scene.selectedItems()
@@ -674,6 +710,7 @@ class AnnotationCanvas(QGraphicsView):
             return
 
         scene_pos = self.mapToScene(event.position().toPoint())
+        self._flush_pending_property_undo()
         self._active_handler = handler
         if handler.on_press(scene_pos):
             self._active_handler = None
@@ -724,6 +761,7 @@ class AnnotationCanvas(QGraphicsView):
         self._emit_selection()
 
     def _begin_drag_tracking(self) -> None:
+        self._flush_pending_property_undo()
         self._drag_positions = {
             item: QPointF(item.pos())
             for item in self._scene.items()
@@ -763,7 +801,7 @@ class AnnotationCanvas(QGraphicsView):
         self._resize_handle = handle
         self._resize_geometry_before = self._capture_geometry(item)
         self._resize_pos_before = QPointF(item.pos())
-        self._property_timer.stop()
+        self._flush_pending_property_undo()
 
     def _apply_resize_to(self, view_pos: QPoint) -> None:
         item = self._resize_item
@@ -891,6 +929,7 @@ class AnnotationCanvas(QGraphicsView):
             if isinstance(item, BlurPatchGraphicsItem) and item.source_rect is not None:
                 item.source_rect.translate(-origin_x, -origin_y)
         self._background_item.setPixmap(cropped)
+        self._bg_image_cache_key = None
         self._scene.setSceneRect(self._background_item.boundingRect())
         self.zoom_to_fit()
         return True
@@ -992,156 +1031,130 @@ class AnnotationCanvas(QGraphicsView):
                 return
         self.selection_changed.emit(None)
 
-    def _snapshot_state(self) -> list:
-        items = [("__meta__", self._step_counter.current)]
-        if self._background_item is not None:
-            items.append(("__bg__", self._background_item.pixmap()))
+    def add_item(self, item) -> None:
+        self._scene.addItem(item)
+
+    def remove_item(self, item) -> None:
+        self._scene.removeItem(item)
+
+    def push_undo_state(self) -> None:
+        self._push_undo_state()
+
+    def emit_image_changed(self) -> None:
+        self.image_changed.emit()
+
+    def apply_blur_region(self, rect: QRectF) -> None:
+        self._apply_blur_region(rect)
+
+    def apply_crop(self, rect: QRectF) -> bool:
+        return self._apply_crop(rect)
+
+    def get_arrow_settings(self) -> tuple[QColor, int]:
+        return self._arrow_color, self._arrow_thickness
+
+    def get_rectangle_settings(self) -> tuple[QColor, int, bool]:
+        return self._rectangle_color, self._rectangle_thickness, self._rectangle_filled
+
+    def get_highlight_settings(self) -> tuple[QColor, int]:
+        return self._highlight_color, self._highlight_opacity
+
+    def get_step_settings(self) -> tuple[QColor, int, StepCounter]:
+        return self._step_color, self._step_size, self._step_counter
+
+    def get_text_settings(self) -> tuple[QColor, int, bool]:
+        return self._text_color, self._text_font_size, self._text_bold
+
+    def get_pen_settings(self) -> tuple[QColor, int]:
+        return self._pen_color, self._pen_thickness
+
+    def get_text_item_at(self, scene_pos: QPointF) -> TextGraphicsItem | None:
+        return self._text_item_at(scene_pos)
+
+    def start_text_edit(self, item: TextGraphicsItem, *, is_new: bool) -> None:
+        self._start_text_edit(item, is_new=is_new)
+
+    def finalize_text_edit(self) -> None:
+        self._finalize_text_edit()
+
+    def is_editing_text(self) -> bool:
+        return self._editing_text_item is not None
+
+    @property
+    def history(self) -> DocumentHistory:
+        return self._history
+
+    def _capture_document_state(self) -> DocumentState:
+        return DocumentState(
+            version=DocumentHistory.DOCUMENT_VERSION,
+            image=self._current_image_value(),
+            annotations=self._capture_annotations(),
+            step_counter=self._step_counter.current,
+        )
+
+    def _current_image_value(self) -> ImageValue | None:
+        if self._background_item is None:
+            return None
+        pixmap = self._background_item.pixmap()
+        if self._bg_image_cache_key != pixmap.cacheKey():
+            self._bg_image_value = qpixmap_to_image_value(pixmap)
+            self._bg_image_cache_key = pixmap.cacheKey()
+        return self._bg_image_value
+
+    def _capture_annotations(self) -> tuple[AnnotationRecord, ...]:
+        records = []
         for item in self._scene.items():
             if item is self._background_item:
                 continue
-            if isinstance(item, ArrowGraphicsItem):
-                items.append(
-                    (
-                        "arrow",
-                        item.start_point + item.pos(),
-                        item.end_point + item.pos(),
-                        QColor(item.color),
-                        item.thickness,
-                    )
-                )
-            elif isinstance(item, StepMarkerGraphicsItem):
-                items.append(
-                    (
-                        "step",
-                        item.pos(),
-                        item.number,
-                        QColor(item.marker_color),
-                        item.marker_size,
-                    )
-                )
-            elif isinstance(item, TextGraphicsItem):
-                items.append(
-                    (
-                        "text",
-                        item.pos(),
-                        item.toPlainText(),
-                        QColor(item.text_color),
-                        item.font_size,
-                        item.bold,
-                    )
-                )
-            elif isinstance(item, RectangleGraphicsItem):
-                items.append(
-                    (
-                        "rectangle",
-                        item.pos(),
-                        QRectF(item.rect),
-                        QColor(item.color),
-                        item.thickness,
-                        item.filled,
-                    )
-                )
-            elif isinstance(item, HighlightGraphicsItem):
-                items.append(
-                    (
-                        "highlight",
-                        item.pos(),
-                        QRectF(item.rect),
-                        QColor(item.color),
-                        item.opacity,
-                    )
-                )
-            elif isinstance(item, BlurPatchGraphicsItem):
-                items.append(
-                    (
-                        "blur",
-                        item.pos(),
-                        item.pixmap().copy(),
-                        item.blur_mode,
-                        item.strength,
-                        QRectF(item.source_rect)
-                        if item.source_rect is not None
-                        else None,
-                    )
-                )
-            elif isinstance(item, PenStrokeGraphicsItem):
-                items.append(
-                    (
-                        "pen",
-                        item.pos(),
-                        QPainterPath(item.path),
-                        QColor(item.color),
-                        item.thickness,
-                    )
-                )
-        return items
+            if not isinstance(item, _CAPTURABLE_TYPES):
+                continue
+            records.append(capture_annotation(item))
+        return tuple(records)
 
     def _schedule_property_undo(self) -> None:
         self._property_timer.start()
 
+    def _flush_pending_property_undo(self) -> None:
+        if self._property_timer.isActive():
+            self._push_undo_state()
+
     def _push_undo_state(self) -> None:
         self._property_timer.stop()
-        self._undo_stack.append(self._snapshot_state())
-        self._redo_stack.clear()
-        if len(self._undo_stack) > self._undo_cap:
-            del self._undo_stack[: len(self._undo_stack) - self._undo_cap]
+        try:
+            state = self._capture_document_state()
+        except LookupError as error:
+            logger.warning("Skipped history entry: %s", error)
+            return
+        result = self._history.apply(state)
+        if isinstance(result, RejectedMutation):
+            logger.warning("History rejected document state: %s", result.reason)
 
-    def _restore_state(self, state: list) -> None:
+    def _restore_document_state(self, state: DocumentState) -> None:
+        for record in state.annotations:
+            if self._registry.adapter(record.kind) is None:
+                logger.warning(
+                    "Restoration rejected: unregistered annotation kind %s",
+                    record.kind,
+                )
+                return
+
+        restored_items = []
+        for record in reversed(state.annotations):
+            restored_items.append(restore_annotation(self._registry, record))
+
         for item in list(self._scene.items()):
             if item is self._background_item:
                 continue
             self._scene.removeItem(item)
 
-        for entry in state:
-            kind = entry[0]
-            if kind == "__meta__":
-                self._step_counter.reset_to(entry[1])
-                continue
-            if kind == "__bg__":
-                if self._background_item is not None:
-                    self._background_item.setPixmap(entry[1])
-                continue
-            if kind == "arrow":
-                _, start, end, color, thickness = entry
-                self._scene.addItem(ArrowGraphicsItem(start, end, color, thickness))
-            elif kind == "step":
-                _, position, number, color, size = entry
-                self._scene.addItem(
-                    StepMarkerGraphicsItem(position, number, color, size)
-                )
-            elif kind == "text":
-                _, position, text, color, font_size, bold = entry
-                self._scene.addItem(
-                    TextGraphicsItem(text, position, color, font_size, bold)
-                )
-            elif kind == "rectangle":
-                _, position, rect, color, thickness, filled = entry
-                item = RectangleGraphicsItem(rect, color, thickness, filled)
-                item.setPos(position)
-                self._scene.addItem(item)
-            elif kind == "highlight":
-                _, position, rect, color, opacity = entry
-                item = HighlightGraphicsItem(rect, color, opacity)
-                item.setPos(position)
-                self._scene.addItem(item)
-            elif kind == "blur":
-                _, position, patch, mode, strength, source_rect = entry
-                item = BlurPatchGraphicsItem(
-                    patch,
-                    QPointF(0, 0),
-                    mode,
-                    strength,
-                    source_rect=QRectF(source_rect)
-                    if source_rect is not None
-                    else None,
-                )
-                item.setPos(position)
-                self._scene.addItem(item)
-            elif kind == "pen":
-                _, position, path, color, thickness = entry
-                item = PenStrokeGraphicsItem(path, color, thickness)
-                item.setPos(position)
-                self._scene.addItem(item)
+        if self._background_item is not None and state.image is not None:
+            self._background_item.setPixmap(image_value_to_qpixmap(state.image))
+            self._bg_image_value = state.image
+            self._bg_image_cache_key = self._background_item.pixmap().cacheKey()
+
+        self._step_counter.reset_to(state.step_counter)
+
+        for item in restored_items:
+            self._scene.addItem(item)
 
         if self._background_item is not None:
             self._scene.setSceneRect(self._background_item.boundingRect())
