@@ -5,23 +5,20 @@ Work through tasks in order — later tasks depend on earlier ones.
 
 ---
 
-## Session Status (updated 2026-08-31 — Phase 17 in progress)
+## Session Status (updated 2026-09-06 — Phase 17 complete)
 
 ### Where to start next session
-Phases 1–16 are complete and verified green. Phase 17 (annotation
-document/history refactor) is in progress: Issue 01 (`establish-document-history`)
-is complete; Issues 02–05 remain. The last verified baseline is `pytest`
-= 235 passed (202 prior + 33 new) under `QT_QPA_PLATFORM=offscreen`,
-and `pytest -m acceptance` = 26 passed. Pick up at Issue 02.
+Phases 1–17 are complete and verified green. The last verified baseline is `pytest`
+= 292 passed under `QT_QPA_PLATFORM=offscreen`, `pytest -m acceptance` = 26 passed,
+and the frozen `dist\StepShot.exe` (2026-09-06 build) passes `--smoke-test` with
+exit code 0. New work should be tracked in a new plan file; the Phase 17 records
+below are the canonical history for the annotation document/history refactor.
 
-### Done this session (Phase 17 — Issue 01)
+### Done this session (Phase 17 — Issues 02–05, close-out)
 
-`models/document_history.py` introduced. Framework-neutral annotation
-document + history module, no PySide6 imports, one-line module docstring,
-no function/class docstrings, full `from __future__ import annotations` +
-type hints per project convention. `StepShot.spec` `hiddenimports` updated
-with `models.document_history`. Full suite green; 33 new tests under
-`tests/test_models/test_document_history.py`.
+Issues 02–05 implemented, reviewed, post-review fixed, and verified; recorded as
+Tasks 17-02 through 17-05 below. Ticket records live in
+`.scratch/annotation-document-history/issues/`.
 
 ### Done this session (post-review fixes)
 
@@ -1733,3 +1730,123 @@ test in that file exercises a distinct seam of the new module.
   callers have moved through the document/history interface.
 - Decoupling tool handlers and `MainWindow` from canvas internals.
 - Running the frozen-build smoke gate.
+
+### Task 17-02 — Migrate the canvas to document/history and the adapter registry ✅ (complete)
+
+#### Decision
+`ui/annotation_adapters.py` became the Qt↔record translation layer:
+per-family capture/restore callables for all seven families,
+`qpixmap_to_image_value` / `image_value_to_qpixmap` (stride and
+device-pixel-ratio preserving), `build_canvas_registry()`, and
+`capturable_types()`. `ui/canvas.py` replaced `_snapshot_state` /
+`_restore_state` / `_undo_stack` / `_redo_stack` with
+`_capture_document_state()` / `_restore_document_state()` over a
+`DocumentHistory`, exposed via the `history` property; the background
+`ImageValue` is cached on `QPixmap.cacheKey()`. All existing workflows
+(draw, move, resize, crop, effects, delete, duplicate, reset, undo/redo)
+route through the document/history interface.
+
+#### Bugs found and fixed during migration
+- **Child-item guard destroyed scene items** — `item.parentItem()` inside
+  `_capture_annotations` flipped Shiboken ownership to Python, deleting the
+  C++ object when the loop variable went out of scope. Removed.
+- **Step-marker children aborted every history push** —
+  `StepMarkerGraphicsItem` is a `QGraphicsItemGroup`, so its children appear
+  in `scene().items()` and `capture_annotation` raised `LookupError` on them.
+  `_capture_annotations` now filters on `capturable_types()`.
+- **Stacking-order reversal** (post-review) — `_restore_document_state`
+  iterates `reversed(state.annotations)` so annotations restore bottom-first,
+  matching original scene order. Mutation-checked: forward iteration fails
+  exactly `test_undo_redo_preserves_mixed_annotations_pixel_perfect`.
+- Post-review hardening: temp-list restore (scene mutated only after all
+  restores succeed), null/0×0 pixmap guard in `load_image`, property-timer
+  stop parity in `load_image` / `reset_to_original`, rejected-apply no longer
+  clears redo, `supported_versions` derived from `_RECORD_VERSION`.
+
+#### Intentional behavior deltas (documented)
+- Duplicate consecutive states no longer grow history
+  (`DocumentHistory.apply` short-circuits on `new_state == current`).
+- `HISTORY_CAP = 50` counts user actions; the seed state is the 51st
+  `DocumentState` in the internal list.
+
+#### Tests and verification
+- New: `tests/test_ui/test_annotation_adapters.py` (15) and
+  `tests/test_ui/test_mixed_annotation_roundtrip.py` (6, pixel-perfect
+  rendered output across undo/redo cycles).
+- `pytest` → 264 passed; `pytest -m acceptance` → 26 passed.
+
+### Task 17-03 — Remove obsolete snapshot and duplicate history paths ✅ (complete)
+
+#### Decision
+Contraction pass after migration: deleted `_snapshot_state`,
+`_restore_state`, `_undo_stack`, `_redo_stack` from the canvas (zero
+production/test callers remained, verified by grep) with no compatibility
+aliases. `DocumentHistory` is the single owner of current state and both
+stacks. Dead `AnnotationAdapterRegistry.kinds()` deleted (zero callers).
+
+#### Post-review fix
+The 400 ms `_property_timer` could fire mid-gesture and capture an in-flight
+drag preview into history (reproduced with a probe: a phantom `'rectangle'`
+record). Added `_flush_pending_property_undo()`, called at every gesture
+start — tool `on_press` in `mousePressEvent`, `_begin_drag_tracking()`, and
+`_begin_resize_tracking()` (replacing a bare timer `stop()` that discarded a
+pending property change). Regression test
+`test_pending_property_undo_flushes_before_gesture`; mutation-checked (bare
+`stop()` fails exactly that test).
+
+#### Tests and verification
+- `pytest` → 265 passed; `pytest -m acceptance` → 26 passed.
+
+### Task 17-04 — Decouple tool handlers and MainWindow from canvas internals ✅ (complete)
+
+#### Decision
+`tools/handlers/context.py` defines the `HandlerContext` protocol (scene
+operations, undo/history push, image_changed emission, blur/crop application,
+settings getters, text-editing lifecycle). The canvas implements it as the
+adapter; `build_handlers(canvas)` attaches the canvas as the context. All 8
+handlers dropped every `canvas._` access. MainWindow reads status state
+through new public canvas methods — `annotation_count()`, `current_zoom()`,
+`has_background()` — instead of `_background_item` and scene traversal.
+Dead protocol surface removed on review: `scene()`, `get_blur_settings()`,
+unused imports.
+
+#### Tests and verification
+- New: `tests/test_ui/test_handler_context.py` (27) — fake-context tests
+  drive every handler without canvas internals; MainWindow interface tests
+  pin the three new methods; all protocol tests request `qapp` (an
+  isolation run without a QApplication hard-crashes 0xC0000409 under
+  Python 3.14 + PySide6 6.11).
+- Mutation-checked: `annotation_count()` → `return 0` fails 5 tests;
+  `has_background()` → `return False` fails exactly its one new test.
+- `pytest` → 292 passed; `pytest -m acceptance` → 26 passed.
+
+### Task 17-05 — Verify the complete refactor ✅ (complete, verified 2026-09-06)
+
+#### Decision
+Final verification ticket: audit coverage across the seams, re-run every
+gate, mutation-check the key regressions, and record the delta.
+
+#### Verification (independently re-run)
+- Coverage audit passed for document/history (40 tests across immutability,
+  equality, versioning, atomic restore, mutations, undo/redo, cap,
+  granularity), serialization (all seven families, stride/DPR, fail-closed),
+  canvas interactions (draw/move/resize/crop/effects/select/delete/
+  duplicate/reset/undo/redo/text-edit protection/no-ops), and rendered-pixel
+  plus scene-space assertions.
+- `pytest` → **292 passed** under `QT_QPA_PLATFORM=offscreen`;
+  `pytest -m acceptance` → **26 passed**.
+- Mutation checks: stacking order (1 failure), `annotation_count` (5),
+  `has_background` (1), property-timer flush (1) — each restored to green.
+- Hidden-import test green; `dist\StepShot.exe` rebuilt 2026-09-06 from the
+  committed tree; `--smoke-test` exit code 0.
+
+#### Test delta: 202 → 292 (+90)
+40 document/history (33 + 7 hardening), 15 adapter round-trip,
+6 mixed-annotation pixel-perfect, 27 handler-context, 2 canvas regressions
+(rejected-apply, property-flush).
+
+#### Accepted limitations (carried)
+- Crop retention remains bbox-based (Phase 14 decision).
+- Blur patch is selectable but not movable/duplicable (Phase 9 decision).
+- `test_mixed_annotation_roundtrip.py:76` duck-types `BlurPatchGraphicsItem`
+  via `__class__.__name__` (accepted nit).
