@@ -266,9 +266,7 @@ class AnnotationCanvas(QGraphicsView):
         self.zoom_to_fit()
         self._step_counter.reset()
         self._active_handler = None
-        self._history = DocumentHistory(
-            self._registry, initial_state=self._capture_document_state()
-        )
+        self._reset_history()
         self._placeholder.hide()
         self.image_changed.emit()
 

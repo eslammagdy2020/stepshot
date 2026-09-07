@@ -6,9 +6,10 @@ resize) → export PNG/JPG or clipboard.
 
 ## Status
 
-**All planned phases (1–16) complete.** Last verified: `pytest` = **292 passed** under
-`QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 26 passed; frozen Windows build
-`dist\StepShot.exe` (~248.6 MB) passes its `--smoke-test` round-trip with exit code 0.
+**All planned phases (1–17) complete.** Last verified 2026-09-07, after the Phase 17 review-fix pass:
+`pytest` = **292 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 26 passed; frozen
+Windows build `dist\StepShot.exe` (248.6 MB, rebuilt 2026-09-07) passes its `--smoke-test` round-trip
+with exit code 0.
 See `upgrade.md` for the per-phase history and decisions. Future work should be tracked in a new plan file.
 
 ## Commands
@@ -38,7 +39,8 @@ exists. `pytest` is the whole verification story; do not invent a lint step or a
 - **Known flake:** running `tests/test_services/test_image_effects.py` *alone* can hard-crash
   (`0xC0000409`) under Python 3.14 + PySide6 6.11.x. Pre-existing, not a regression. Verify with the full
   suite, never that file in isolation.
-- The repo is a git repo with **zero commits** — `git diff HEAD` / `git log` will fail; everything is untracked.
+- Git history starts at Phase 17: root commit `0a574a1` is the pre-refactor baseline plus Issue 01's
+  module, so `git log` covers Phase 17 onward only — earlier phases were never committed.
 - `keyboard` (global hotkeys) is optional: missing or failing registration degrades to toolbar-only with a
   QMessageBox, so never assume hotkeys are live.
 
@@ -91,7 +93,9 @@ Undo/redo is managed by `models.document_history.DocumentHistory`. `AnnotationCa
 history instance; its `undo_stack` and `redo_stack` properties return tuples of `DocumentState`. The canvas
 captures state via `_capture_document_state()` (producing a `DocumentState` with `ImageValue`, annotations,
 and step counter) and restores it via `_restore_document_state()`. History holds at most 50 undo entries
-(51 `DocumentState`s including the current one).
+(51 `DocumentState`s including the current one). `load_image()` and `reset_to_original()` seed a fresh
+`DocumentHistory` through `_reset_history()`, so loading a screenshot creates an initial state with no
+undo entry.
 
 `_push_undo_state()` stops `_property_timer`, captures the current document state, and applies it to
 `DocumentHistory`. Property setters call `_schedule_property_undo()` instead (400 ms coalescing) so a slider
@@ -171,7 +175,7 @@ correctly.
 
 ## Related files
 
-- `upgrade.md` — phased implementation plan; **all 16 phases complete** with decisions, acceptance
+- `upgrade.md` — phased implementation plan; **all 17 phases complete** with decisions, acceptance
   criteria, per-phase verification commands, and post-review fix passes.
 - `CLAUDE.md` — pointer to this file.
 - `tests/README.md` — test invocation only.
