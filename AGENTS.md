@@ -175,7 +175,8 @@ correctly.
 
 ## Related files
 
-- `upgrade.md` — phased implementation plan; **all 17 phases complete** with decisions, acceptance
+- `upgrade.md` — phased implementation plan; **Phases 1–17 complete** with decisions, acceptance
   criteria, per-phase verification commands, and post-review fix passes.
+- `upgrade-v2.md` — Phases 18+ plan (Screenshot Inventory / Multi-Screenshot Management).
 - `CLAUDE.md` — pointer to this file.
 - `tests/README.md` — test invocation only.
