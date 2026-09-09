@@ -64,6 +64,7 @@ hiddenimports = [
     "models",
     "models.step_marker",
     "models.document_history",
+    "models.screenshot_inventory",
     "tools",
     "tools.arrow_tool",
     "tools.rectangle_tool",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from enum import Enum, auto
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
@@ -28,6 +29,7 @@ from models.document_history import (
     ImageValue,
     RejectedMutation,
 )
+from models.screenshot_inventory import ScreenshotInventory, ScreenshotRecord
 from models.step_marker import StepCounter
 from services import settings_service
 from services.image_effects import BlurMode, apply_region_effect
@@ -82,6 +84,7 @@ MAX_ZOOM = 16.0
 class AnnotationCanvas(QGraphicsView):
     selection_changed = Signal(object)
     image_changed = Signal()
+    inventory_changed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -172,6 +175,7 @@ class AnnotationCanvas(QGraphicsView):
 
         self._registry = build_canvas_registry()
         self._history = DocumentHistory(self._registry)
+        self._inventory = ScreenshotInventory()
         self._bg_image_value = None
         self._bg_image_cache_key: int | None = None
         self._original_pixmap: QPixmap | None = None
@@ -253,22 +257,189 @@ class AnnotationCanvas(QGraphicsView):
             self._scene.clearSelection()
 
     def load_image(self, pixmap: QPixmap) -> None:
-        if pixmap.isNull():
-            return
+        self.add_screenshot(pixmap, "region")
+
+    def set_inventory(self, inventory: ScreenshotInventory) -> None:
         self._finalize_text_edit()
-        self._property_timer.stop()
+        self._flush_pending_property_undo()
         self._cancel_resize_tracking()
-        self._original_pixmap = pixmap.copy()
+        self._inventory = inventory
+        record = inventory.get_current()
+        if record is None:
+            self._clear_canvas_to_empty()
+        else:
+            self._load_record(record)
+        self.inventory_changed.emit()
+        self.image_changed.emit()
+
+    def add_screenshot(self, pixmap: QPixmap, source: str) -> bool:
+        if pixmap.isNull():
+            return False
+        self._finalize_text_edit()
+        self._flush_pending_property_undo()
+        self._cancel_resize_tracking()
+        self._drag_positions = None
+        if self._background_item is not None and len(self._inventory) > 0:
+            self._inventory.update_current(self._capture_document_state())
+        image_value = qpixmap_to_image_value(pixmap)
+        state = DocumentState(
+            version=DocumentHistory.DOCUMENT_VERSION,
+            image=image_value,
+            annotations=(),
+            step_counter=1,
+        )
+        history = DocumentHistory(self._registry, initial_state=state)
+        record = ScreenshotRecord(
+            original=image_value,
+            current=state,
+            timestamp=time.time(),
+            source=source,
+            history=history,
+        )
+        self._inventory.add(record)
+        self._load_record(record)
+        self.inventory_changed.emit()
+        self.image_changed.emit()
+        return True
+
+    def switch_to(self, index: int) -> bool:
+        if len(self._inventory) == 0:
+            return False
+        if index == self._inventory.current_index:
+            return False
+        if not 0 <= index < len(self._inventory):
+            return False
+        self._finalize_text_edit()
+        self._flush_pending_property_undo()
+        self._cancel_resize_tracking()
+        self._drag_positions = None
+        self._cancel_previews()
+        self._active_handler = None
+        if self._background_item is not None:
+            self._inventory.update_current(self._capture_document_state())
+        record = self._inventory.switch_to(index)
+        if record is None:
+            return False
+        self._load_record(record)
+        self.inventory_changed.emit()
+        self.image_changed.emit()
+        return True
+
+    def next_screenshot(self) -> bool:
+        return self.switch_to(self._inventory.current_index + 1)
+
+    def prev_screenshot(self) -> bool:
+        return self.switch_to(self._inventory.current_index - 1)
+
+    def remove_current(self) -> bool:
+        if len(self._inventory) == 0:
+            return False
+        self._finalize_text_edit()
+        self._flush_pending_property_undo()
+        self._cancel_resize_tracking()
+        self._drag_positions = None
+        self._cancel_previews()
+        self._active_handler = None
+        self._inventory.remove_at(self._inventory.current_index)
+        record = self._inventory.get_current()
+        if record is None:
+            self._clear_canvas_to_empty()
+        else:
+            self._load_record(record)
+        self.inventory_changed.emit()
+        self.image_changed.emit()
+        return True
+
+    def clear_inventory(self) -> None:
+        self._finalize_text_edit()
+        self._flush_pending_property_undo()
+        self._cancel_resize_tracking()
+        self._drag_positions = None
+        self._cancel_previews()
+        self._active_handler = None
+        self._inventory.clear()
+        self._clear_canvas_to_empty()
+        self.inventory_changed.emit()
+        self.image_changed.emit()
+
+    def _clear_canvas_to_empty(self) -> None:
         self._scene.clear()
-        self._background_item = self._scene.addPixmap(pixmap)
+        self._background_item = None
+        self._original_pixmap = None
+        self._bg_image_value = None
+        self._bg_image_cache_key = None
+        self._step_counter.reset()
+        self._history = DocumentHistory(self._registry)
+        self._scene.clearSelection()
+        self.selection_changed.emit(None)
+        self._show_placeholder()
+
+    def _load_record(self, record: ScreenshotRecord) -> None:
+        self._original_pixmap = image_value_to_qpixmap(record.original)
+        self._scene.clear()
+        self._background_item = self._scene.addPixmap(
+            image_value_to_qpixmap(record.current.image)
+            if record.current.image is not None
+            else image_value_to_qpixmap(record.original)
+        )
         self._background_item.setZValue(-1)
         self._scene.setSceneRect(self._background_item.boundingRect())
         self.zoom_to_fit()
-        self._step_counter.reset()
+        self._step_counter.reset_to(record.current.step_counter)
         self._active_handler = None
-        self._reset_history()
+        self._bg_image_value = None
+        self._bg_image_cache_key = None
+        self._restore_scene_only(record.current)
+        if record.history is None:
+            self._history = DocumentHistory(self._registry, initial_state=record.current)
+            self._inventory.set_history(self._history)
+        else:
+            self._history = record.history
+            if self._history.current != record.current:
+                self._inventory.update_current(self._history.current)
+                record = self._inventory.get_current() or record
+                self._restore_scene_only(record.current)
+        self._scene.clearSelection()
+        self.selection_changed.emit(None)
         self._placeholder.hide()
-        self.image_changed.emit()
+
+    def _restore_scene_only(self, state: DocumentState) -> None:
+        restored_items = []
+        for record_item in reversed(state.annotations):
+            restored_items.append(restore_annotation(self._registry, record_item))
+        for item in list(self._scene.items()):
+            if item is self._background_item:
+                continue
+            self._scene.removeItem(item)
+        if self._background_item is not None and state.image is not None:
+            self._background_item.setPixmap(image_value_to_qpixmap(state.image))
+            self._bg_image_value = state.image
+            self._bg_image_cache_key = self._background_item.pixmap().cacheKey()
+        self._step_counter.reset_to(state.step_counter)
+        for item in restored_items:
+            self._scene.addItem(item)
+        if self._background_item is not None:
+            self._scene.setSceneRect(self._background_item.boundingRect())
+
+    @property
+    def inventory(self) -> ScreenshotInventory:
+        return self._inventory
+
+    @property
+    def inventory_count(self) -> int:
+        return len(self._inventory)
+
+    @property
+    def current_index_1based(self) -> int:
+        if len(self._inventory) == 0:
+            return 0
+        return self._inventory.current_index + 1
+
+    def can_go_next(self) -> bool:
+        return self._inventory.can_go_next()
+
+    def can_go_prev(self) -> bool:
+        return self._inventory.can_go_prev()
 
     def _reset_history(self) -> None:
         self._history = DocumentHistory(
@@ -550,7 +721,7 @@ class AnnotationCanvas(QGraphicsView):
         return len(markers)
 
     def has_screenshot(self) -> bool:
-        return self._original_pixmap is not None
+        return len(self._inventory) > 0 and self._background_item is not None
 
     def annotation_count(self) -> int:
         if self._background_item is None:
@@ -568,25 +739,32 @@ class AnnotationCanvas(QGraphicsView):
         return self._background_item is not None
 
     def reset_to_original(self) -> bool:
-        if self._original_pixmap is None or self._background_item is None:
-            return False
-
-        self._property_timer.stop()
+        record = self._inventory.get_current()
+        if record is None or self._background_item is None:
+            if self._original_pixmap is None or self._background_item is None:
+                return False
+            record = None
+        self._flush_pending_property_undo()
         self._finalize_text_edit()
         self._cancel_resize_tracking()
         for item in list(self._scene.items()):
             if item is not self._background_item:
                 self._scene.removeItem(item)
-
         self._scene.removeItem(self._background_item)
-        restored = self._original_pixmap.copy()
+        if record is not None:
+            restored = image_value_to_qpixmap(record.original)
+            self._original_pixmap = restored.copy()
+        else:
+            restored = self._original_pixmap.copy()
         self._background_item = self._scene.addPixmap(restored)
         self._background_item.setZValue(-1)
         self._scene.setSceneRect(self._background_item.boundingRect())
         self.zoom_to_fit()
-
         self._step_counter.reset(start=1)
         self._reset_history()
+        if record is not None:
+            self._inventory.set_history(self._history)
+            self._inventory.update_current(self._capture_document_state())
         self._scene.clearSelection()
         self.selection_changed.emit(None)
         self.image_changed.emit()
@@ -651,6 +829,8 @@ class AnnotationCanvas(QGraphicsView):
         state = self._history.undo()
         if state is not None:
             self._restore_document_state(state)
+            if len(self._inventory) > 0:
+                self._inventory.update_current(state)
 
     def redo(self) -> None:
         self._property_timer.stop()
@@ -660,6 +840,8 @@ class AnnotationCanvas(QGraphicsView):
         state = self._history.redo()
         if state is not None:
             self._restore_document_state(state)
+            if len(self._inventory) > 0:
+                self._inventory.update_current(state)
 
     def delete_selected(self) -> None:
         selected = self._scene.selectedItems()
@@ -1124,6 +1306,8 @@ class AnnotationCanvas(QGraphicsView):
         result = self._history.apply(state)
         if isinstance(result, RejectedMutation):
             logger.warning("History rejected document state: %s", result.reason)
+        if len(self._inventory) > 0 and self._background_item is not None:
+            self._inventory.update_current(self._history.current)
 
     def _restore_document_state(self, state: DocumentState) -> None:
         for record in state.annotations:

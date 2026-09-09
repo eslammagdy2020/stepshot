@@ -146,7 +146,7 @@ class StepShotApp:
             logger.error("full-screen capture failed: %s", exc)
             self._show_capture_error(str(exc))
             return
-        self.main_window.load_screenshot(pixmap)
+        self.main_window.add_screenshot(pixmap, "fullscreen")
 
     def _on_region_selected(self, rect: QRect) -> None:
         self._pending_region = rect
@@ -175,7 +175,7 @@ class StepShotApp:
             logger.error("region capture failed: %s", exc)
             self._show_capture_error(str(exc))
             return
-        self.main_window.load_screenshot(pixmap)
+        self.main_window.add_screenshot(pixmap, "region")
 
     def _on_capture_cancelled(self) -> None:
         self.main_window.show()

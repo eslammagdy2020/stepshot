@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QPointF, QRect, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QKeySequence
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from services.clipboard_service import ClipboardService
@@ -30,6 +30,7 @@ from tests.conftest import (
     place_step_marker,
 )
 from ui.canvas import AnnotationCanvas, ToolMode
+from ui.main_window import MainWindow
 from ui.graphics_items import (
     ArrowGraphicsItem,
     BlurPatchGraphicsItem,
@@ -39,7 +40,7 @@ from ui.graphics_items import (
     TextGraphicsItem,
 )
 from ui.region_selector import RegionSelector
-from ui.toolbar import LeftToolBar, TopToolBar
+from ui.toolbar import InventoryToolBar, LeftToolBar, TopToolBar
 
 
 def _first(canvas, item_type):
@@ -518,6 +519,99 @@ class TestCopyToClipboard:
         assert not copied.isNull()
         assert copied.width() == pixmap.width()
         assert copied.height() == pixmap.height()
+
+
+@pytest.mark.acceptance
+class TestScreenshotInventoryWorkflow:
+    """Phase 18 — Screenshot Inventory / Multi-Screenshot Management."""
+
+    @staticmethod
+    def _shot(color: tuple[int, int, int]) -> QPixmap:
+        pixmap = QPixmap(640, 480)
+        pixmap.fill(QColor(*color))
+        return pixmap
+
+    def test_capture_three_and_cycle_counter(self, qapp, qtbot):
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.add_screenshot(self._shot((70, 130, 180)), "region")
+        window.add_screenshot(self._shot((180, 70, 70)), "fullscreen")
+        window.add_screenshot(self._shot((70, 180, 130)), "region")
+
+        canvas = window._canvas
+        assert canvas.inventory_count == 3
+        assert canvas.current_index_1based == 3
+        assert window._inventory_toolbar.inventory_counter.text() == "3 of 3"
+        assert window._inventory_toolbar.prev_action.isEnabled() is True
+        assert window._inventory_toolbar.next_action.isEnabled() is False
+
+        window._prev_screenshot()
+        assert canvas.current_index_1based == 2
+        assert window._inventory_toolbar.inventory_counter.text() == "2 of 3"
+        assert "Screenshot 2 of 3" in window._annotation_label.text()
+
+        window._next_screenshot()
+        assert canvas.current_index_1based == 3
+
+    def test_shortcuts_for_inventory_navigation(self, qapp, qtbot):
+        toolbar = InventoryToolBar()
+        qtbot.addWidget(toolbar)
+        shortcuts = {
+            action.text(): action.shortcut().toString()
+            for action in toolbar.actions()
+            if action.text()
+        }
+        assert shortcuts["Next Screenshot"] == QKeySequence("Ctrl+Tab").toString()
+        assert (
+            shortcuts["Previous Screenshot"]
+            == QKeySequence("Ctrl+Shift+Tab").toString()
+        )
+
+    def test_annotations_persist_and_undo_isolated(self, qapp, qtbot):
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.add_screenshot(self._shot((70, 130, 180)), "region")
+        window.add_screenshot(self._shot((180, 70, 70)), "fullscreen")
+
+        canvas = window._canvas
+        canvas.switch_to(0)
+        draw_arrow_on_canvas(canvas, qtbot, QPointF(50, 50), QPointF(200, 150))
+        canvas.switch_to(1)
+        draw_arrow_on_canvas(canvas, qtbot, QPointF(60, 60), QPointF(210, 160))
+
+        canvas.switch_to(0)
+        assert canvas.annotation_count() == 1
+        canvas.undo()
+        assert canvas.annotation_count() == 0
+        canvas.switch_to(1)
+        assert canvas.annotation_count() == 1
+
+    def test_copy_delete_clear_workflow(self, qapp, qtbot, mock_clipboard):
+        window = MainWindow()
+        qtbot.addWidget(window)
+        window.add_screenshot(self._shot((70, 130, 180)), "region")
+        window.add_screenshot(self._shot((180, 70, 70)), "fullscreen")
+        window.add_screenshot(self._shot((70, 180, 130)), "region")
+
+        canvas = window._canvas
+        canvas.switch_to(1)
+        draw_arrow_on_canvas(canvas, qtbot, QPointF(50, 50), QPointF(200, 150))
+        rendered = canvas.render_to_pixmap()
+        assert not rendered.isNull()
+        ClipboardService.copy_image(rendered)
+        copied = mock_clipboard.pixmap()
+        assert not copied.isNull()
+        assert copied.width() == rendered.width()
+        assert copied.height() == rendered.height()
+
+        window._delete_screenshot()
+        assert canvas.inventory_count == 2
+        assert canvas.current_index_1based == 2
+        assert "2 of 2" in window._annotation_label.text()
+
+        window._clear_inventory()
+        assert canvas.inventory_count == 0
+        assert canvas.has_screenshot() is False
 
 
 @pytest.mark.acceptance

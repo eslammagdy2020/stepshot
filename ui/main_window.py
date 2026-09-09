@@ -36,7 +36,7 @@ from ui.graphics_items import (
     TextGraphicsItem,
 )
 from ui.theme import COLORS
-from ui.toolbar import LeftToolBar, TopToolBar
+from ui.toolbar import InventoryToolBar, LeftToolBar, TopToolBar
 
 
 class MainWindow(QMainWindow):
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
 
         self._canvas = AnnotationCanvas()
         self._top_toolbar = TopToolBar()
+        self._inventory_toolbar = InventoryToolBar()
         self._left_toolbar = LeftToolBar()
         self._properties_panel = self._build_properties_panel()
 
@@ -74,6 +75,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.addToolBar(self._top_toolbar)
+        self.addToolBarBreak()
+        self.addToolBar(self._inventory_toolbar)
         self._connect_signals()
 
         self._status = self.statusBar()
@@ -86,13 +89,18 @@ class MainWindow(QMainWindow):
         self._zoom_label = QLabel("")
         self._zoom_label.setObjectName("StatusLabel")
         self._status.addPermanentWidget(self._zoom_label)
+        self._update_inventory_state()
 
     def load_screenshot(self, pixmap: QPixmap) -> None:
-        self._canvas.load_image(pixmap)
+        self.add_screenshot(pixmap, "region")
+
+    def add_screenshot(self, pixmap: QPixmap, source: str = "region") -> None:
+        self._canvas.add_screenshot(pixmap, source)
         self.show()
         self.raise_()
         self.activateWindow()
         self._update_zoom_indicator()
+        self._update_inventory_state()
 
     def _on_tool_selected(self, mode: ToolMode) -> None:
         self._canvas.set_tool_mode(mode)
@@ -146,10 +154,15 @@ class MainWindow(QMainWindow):
         self._top_toolbar.zoom_out.connect(self._zoom_out)
         self._top_toolbar.zoom_fit.connect(self._zoom_fit)
         self._top_toolbar.zoom_reset.connect(self._zoom_reset)
+        self._inventory_toolbar.prev_screenshot.connect(self._prev_screenshot)
+        self._inventory_toolbar.next_screenshot.connect(self._next_screenshot)
+        self._inventory_toolbar.delete_screenshot.connect(self._delete_screenshot)
+        self._inventory_toolbar.clear_inventory.connect(self._clear_inventory)
 
         self._canvas.selection_changed.connect(self._update_properties_panel)
         self._canvas.image_changed.connect(self._update_annotation_count)
         self._canvas.image_changed.connect(self._update_zoom_indicator)
+        self._canvas.inventory_changed.connect(self._update_inventory_state)
 
     def _build_properties_panel(self) -> QWidget:
         panel = QWidget()
@@ -592,4 +605,62 @@ class MainWindow(QMainWindow):
 
     def _update_annotation_count(self) -> None:
         count = self._canvas.annotation_count()
-        self._annotation_label.setText(f"{count} annotations")
+        total = self._canvas.inventory_count
+        current = self._canvas.current_index_1based
+        if total == 0:
+            self._annotation_label.setText(f"{count} annotations")
+        else:
+            self._annotation_label.setText(
+                f"Screenshot {current} of {total} · {count} annotations"
+            )
+
+    def _update_inventory_state(self) -> None:
+        total = self._canvas.inventory_count
+        current = self._canvas.current_index_1based
+        self._inventory_toolbar.update_inventory_state(
+            current,
+            total,
+            self._canvas.can_go_prev(),
+            self._canvas.can_go_next(),
+            self._canvas.has_screenshot(),
+        )
+        self._update_annotation_count()
+
+    def _prev_screenshot(self) -> None:
+        if self._canvas.prev_screenshot():
+            self._status.showMessage(
+                f"Screenshot {self._canvas.current_index_1based}"
+                f" of {self._canvas.inventory_count}.",
+                3000,
+            )
+
+    def _next_screenshot(self) -> None:
+        if self._canvas.next_screenshot():
+            self._status.showMessage(
+                f"Screenshot {self._canvas.current_index_1based}"
+                f" of {self._canvas.inventory_count}.",
+                3000,
+            )
+
+    def _delete_screenshot(self) -> None:
+        if not self._canvas.has_screenshot():
+            self._status.showMessage("Capture a screenshot first.", 4000)
+            return
+        if self._canvas.remove_current():
+            total = self._canvas.inventory_count
+            if total == 0:
+                self._status.showMessage("Deleted screenshot. Inventory empty.", 4000)
+            else:
+                self._status.showMessage(
+                    f"Deleted screenshot. Screenshot {self._canvas.current_index_1based}"
+                    f" of {total}.",
+                    4000,
+                )
+
+    def _clear_inventory(self) -> None:
+        if not self._canvas.has_screenshot():
+            self._status.showMessage("Inventory already empty.", 4000)
+            return
+        count = self._canvas.inventory_count
+        self._canvas.clear_inventory()
+        self._status.showMessage(f"Cleared {count} screenshots.", 4000)

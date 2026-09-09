@@ -64,63 +64,41 @@ class TopToolBar(QToolBar):
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
 
         style = self.style()
-        self.addAction(
-            self._action(
-                "Capture Region",
-                self.new_capture.emit,
-                "Ctrl+N",
-                primary=True,
-                icon=style.standardIcon(QStyle.StandardPixmap.SP_DesktopIcon),
-            )
+        self._action(
+            "Capture Region",
+            self.new_capture.emit,
+            "Ctrl+N",
+            primary=True,
+            icon=style.standardIcon(QStyle.StandardPixmap.SP_DesktopIcon),
         )
-        self.addAction(
-            self._action(
-                "Full Screen",
-                self.full_screen_capture.emit,
-                "Ctrl+Shift+N",
-                icon=style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton),
-            )
+        self._action(
+            "Full Screen",
+            self.full_screen_capture.emit,
+            "Ctrl+Shift+N",
+            icon=style.standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton),
         )
         self.addSeparator()
-        self.addAction(
-            self._action(
-                "Save",
-                self.save_image.emit,
-                "Ctrl+S",
-                icon=style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
-            )
+        self._action(
+            "Save",
+            self.save_image.emit,
+            "Ctrl+S",
+            icon=style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton),
         )
-        self.addAction(
-            self._action(
-                "Copy",
-                self.copy_image.emit,
-                "Ctrl+C",
-                icon=style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
-            )
+        self._action(
+            "Copy",
+            self.copy_image.emit,
+            "Ctrl+C",
+            icon=style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton),
         )
         self.addSeparator()
-        self.addAction(
-            self._glyph_action("Undo", "↶", self.undo.emit, "Ctrl+Z"),
-        )
-        self.addAction(
-            self._glyph_action("Redo", "↷", self.redo.emit, "Ctrl+Y"),
-        )
-        self.addAction(
-            self._glyph_action("Duplicate", "⧉", self.duplicate.emit, "Ctrl+D"),
-        )
+        self._glyph_action("Undo", "↶", self.undo.emit, "Ctrl+Z")
+        self._glyph_action("Redo", "↷", self.redo.emit, "Ctrl+Y")
+        self._glyph_action("Duplicate", "⧉", self.duplicate.emit, "Ctrl+D")
         self.addSeparator()
-        self.addAction(
-            self._compact_glyph_action("Zoom In", "+", self.zoom_in.emit, "Ctrl++"),
-        )
-        self.addAction(
-            self._compact_glyph_action("Zoom Out", "−", self.zoom_out.emit, "Ctrl+-"),
-        )
-        self.addAction(
-            self._glyph_action("Zoom Fit", "⤢", self.zoom_fit.emit, "Ctrl+0"),
-        )
-        self.addAction(
-            self._glyph_action("Zoom 100%", "1:1", self.zoom_reset.emit, "Ctrl+1"),
-        )
+        self._compact_glyph_action("Zoom In", "+", self.zoom_in.emit, "Ctrl++")
+        self._compact_glyph_action("Zoom Out", "−", self.zoom_out.emit, "Ctrl+-")
+        self._glyph_action("Zoom Fit", "⤢", self.zoom_fit.emit, "Ctrl+0")
+        self._glyph_action("Zoom 100%", "1:1", self.zoom_reset.emit, "Ctrl+1")
 
     def _action(
         self,
@@ -180,6 +158,79 @@ class TopToolBar(QToolBar):
             button.setFixedSize(36, 32)
             button.setToolTip(f"{text} ({shortcut})" if shortcut else text)
         return action
+
+    def _compact_glyph_action(
+        self,
+        text: str,
+        glyph: str,
+        slot,
+        shortcut: str | None = None,
+    ) -> QAction:
+        return compact_glyph_action(self, text, glyph, slot, shortcut)
+
+
+def compact_glyph_action(
+    toolbar: QToolBar,
+    text: str,
+    glyph: str,
+    slot,
+    shortcut: str | None = None,
+) -> QAction:
+    action = QAction(glyph_icon(glyph, size=22), text, toolbar)
+    action.triggered.connect(slot)
+    if shortcut:
+        action.setShortcut(QKeySequence(shortcut))
+    toolbar.addAction(action)
+    button = toolbar.widgetForAction(action)
+    if isinstance(button, QToolButton):
+        button.setObjectName("GlyphButton")
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        button.setFixedSize(36, 32)
+        button.setToolTip(f"{text} ({shortcut})" if shortcut else text)
+    return action
+
+
+class InventoryToolBar(QToolBar):
+    prev_screenshot = Signal()
+    next_screenshot = Signal()
+    delete_screenshot = Signal()
+    clear_inventory = Signal()
+
+    def __init__(self) -> None:
+        super().__init__("Screenshots")
+        self.setObjectName("InventoryBar")
+        self.setMovable(False)
+        self.setIconSize(QSize(20, 20))
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+
+        self.prev_action = compact_glyph_action(
+            self, "Previous Screenshot", "←", self.prev_screenshot.emit, "Ctrl+Shift+Tab"
+        )
+        self.inventory_counter = QLabel("0 of 0")
+        self.inventory_counter.setObjectName("InventoryCounter")
+        self.addWidget(self.inventory_counter)
+        self.next_action = compact_glyph_action(
+            self, "Next Screenshot", "→", self.next_screenshot.emit, "Ctrl+Tab"
+        )
+        self.addSeparator()
+        self.delete_screenshot_action = compact_glyph_action(
+            self, "Delete Screenshot", "✕", self.delete_screenshot.emit, "Ctrl+Delete"
+        )
+        self.clear_inventory_action = compact_glyph_action(
+            self, "Clear All Screenshots", "⟲", self.clear_inventory.emit
+        )
+
+    def update_inventory_state(
+        self, current: int, total: int, can_prev: bool, can_next: bool, has_shot: bool
+    ) -> None:
+        if total == 0:
+            self.inventory_counter.setText("0 of 0")
+        else:
+            self.inventory_counter.setText(f"{current} of {total}")
+        self.prev_action.setEnabled(can_prev)
+        self.next_action.setEnabled(can_next)
+        self.delete_screenshot_action.setEnabled(has_shot)
+        self.clear_inventory_action.setEnabled(has_shot)
 
 
 class LeftToolBar(QWidget):

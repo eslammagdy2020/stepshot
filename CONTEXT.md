@@ -77,3 +77,12 @@ The single undoable document mutation that implements Reset All and restores the
 
 ## Settled Design
 A document/history design whose alternatives have been decided, whose contracts are written down, and which is ready for implementation without silently assumed choices.
+
+## Screenshot
+A captured image together with its live annotation document and capture metadata. It preserves the original capture separately from the current edited state.
+
+## Screenshot Inventory
+The ordered in-memory set of screenshots captured during a session. It identifies the active screenshot and preserves each screenshot's annotation document and editing history.
+
+## Active Screenshot
+The screenshot in the inventory currently shown on the canvas. Editing actions apply to the active screenshot only.

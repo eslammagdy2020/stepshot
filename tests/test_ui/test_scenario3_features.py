@@ -342,7 +342,7 @@ class TestAnnotationCount:
         window.load_screenshot(sample_pixmap)
 
         draw_arrow_on_canvas(window._canvas, qtbot, QPointF(50, 50), QPointF(200, 150))
-        assert window._annotation_label.text() == "1 annotations"
+        assert "1 annotations" in window._annotation_label.text()
 
         window.load_screenshot(sample_pixmap)
-        assert window._annotation_label.text() == "0 annotations"
+        assert "0 annotations" in window._annotation_label.text()
