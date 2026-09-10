@@ -23,7 +23,7 @@ Phase A and Phase B land together as one change. The distribution format was alr
 ### Phase A: Slim the Spec File (Core Reduction)
 Instead of relying on `excludes` or `collect_all`, implement post-Analysis filtering directly in `StepShot.spec`:
 1. **Drop `collect_all("PySide6")` and `collect_all("PIL")`.**
-2. **Filter `a.binaries` and `a.datas` via list comprehensions:** Strip out libraries and folders matching known bloat (e.g., `Qt6WebEngine`, `Qt6Qml`, `Qt63D`, `Qt6Designer`, `Qt6Multimedia`, `Qt6Network`, `Qt6Sql`, `Qt6Pdf`).
+2. **Filter `a.binaries` and `a.datas` via post-Analysis filter helpers (`_filter_toc`):** Strip out libraries and folders matching known bloat (e.g., `Qt6WebEngine`, `Qt6Qml`, `Qt63D`, `Qt6Designer`, `Qt6Multimedia`, `Qt6Network`, `Qt6Sql`, `Qt6Pdf`).
 3. **Preserve Essential Qt Plugins:** Ensure the filters explicitly *keep*:
    - `plugins/platforms/qwindows.dll`
    - `plugins/styles/qwindowsvistastyle.dll`
