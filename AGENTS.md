@@ -6,22 +6,23 @@ resize) → export PNG/JPG or clipboard.
 
 ## Status
 
-**All planned phases (1–17) complete.** Last verified 2026-09-07, after the Phase 17 review-fix pass:
-`pytest` = **292 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 26 passed; frozen
-Windows build `dist\StepShot.exe` (248.6 MB, rebuilt 2026-09-07) passes its `--smoke-test` round-trip
-with exit code 0.
-See `upgrade.md` for the per-phase history and decisions. Future work should be tracked in a new plan file.
+**All planned phases (1–19) complete.** Last verified 2026-09-10, after the Phase 19 verification gate:
+`pytest` = **326 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 30 passed; onedir
+build `dist\StepShot\` (94.4 MB, rebuilt 2026-09-10) passes its `--smoke-test` round-trip with exit
+code 0.
+See `upgrade.md` for the per-phase history and decisions. Phase 18 (Screenshot Inventory) is tracked in
+`upgrade-v2.md`; Phase 19 (App Size & Startup Time Reduction) in `Phase19.md`.
 
 ## Commands
 
 ```powershell
 pip install -r requirements-test.txt            # includes requirements.txt
-pytest                                          # 292 tests, ~5s — the only verification gate
-pytest -m acceptance                            # 26 PRD acceptance tests
+pytest                                          # 326 tests, ~5s — the only verification gate
+pytest -m acceptance                            # 30 PRD acceptance tests
 python main.py                                  # run from source
-dist\StepShot.exe                               # run the frozen build
-$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot.exe --smoke-test   # headless smoke gate
-pip install -r requirements-build.txt; python build.py            # → dist/StepShot.exe (~250 MB one-file)
+dist\StepShot\StepShot.exe                      # run the frozen build
+$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot\StepShot.exe --smoke-test   # headless smoke gate
+pip install -r requirements-build.txt; python build.py            # → dist/StepShot/ (onedir)
 ```
 
 There is **no linter, formatter, type checker, or codegen step** in this repo — no ruff/black/mypy config
@@ -178,5 +179,6 @@ correctly.
 - `upgrade.md` — phased implementation plan; **Phases 1–17 complete** with decisions, acceptance
   criteria, per-phase verification commands, and post-review fix passes.
 - `upgrade-v2.md` — Phases 18+ plan (Screenshot Inventory / Multi-Screenshot Management).
+- `Phase19.md` — Phase 19 plan (App Size & Startup Time Reduction), complete and verified.
 - `CLAUDE.md` — pointer to this file.
 - `tests/README.md` — test invocation only.

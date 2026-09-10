@@ -8,8 +8,10 @@ Work through tasks in order — later tasks depend on earlier ones.
 ## Session Status
 
 ### Where to start next session
-All Phase 1–17 work complete (see `upgrade.md`). New plan starts at Phase 18.
-Last verified baseline: `pytest` = 292 passed, `pytest -m acceptance` = 26 passed.
+Phase 18 (Screenshot Inventory) complete and verified green (see `upgrade.md` for Phases 1–17 history).
+Phase 19 (App Size & Startup Time Reduction) complete and verified green — see `Phase19.md`.
+Next plan starts at Phase 20 (Inventory Persistence, optional post-MVP).
+Last verified baseline: `pytest` = 326 passed, `pytest -m acceptance` = 30 passed.
 
 ---
 
@@ -113,7 +115,42 @@ pytest
 
 ---
 
-## Phase 19 — Inventory Persistence (Optional, Post-MVP)
+## Phase 19 — App Size & Startup Time Reduction
+
+**Priority: High — distribution quality**
+
+Spec: `Phase19.md` (single source of truth). One-line summary: slim the PyInstaller spec and switch
+the frozen build from one-file to `--onedir` (`dist\StepShot\`).
+
+### Key Decisions
+- **Onedir only; onefile retired**: `dist\StepShot\` is the sole distribution format — no build flag,
+  no single-exe fallback. The one-file unpack-to-`%TEMP%` cold start was the core problem.
+- **`opengl32sw.dll` kept**: the ~20 MB software-GL fallback stays as insurance for RDP/VM users
+  without hardware acceleration.
+- **UPX rejected**: it breaks Qt6 vtables/relocations and triggers antivirus false positives.
+- **Sharing via manual zip**: the user zips `dist\StepShot\` by hand for colleagues; no auto-zip
+  tooling.
+
+### Verification (2026-09-10, ticket 04)
+
+```powershell
+$env:QT_QPA_PLATFORM="offscreen"; pytest
+$env:QT_QPA_PLATFORM="offscreen"; pytest -m acceptance
+python build.py
+$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot\StepShot.exe --smoke-test
+```
+
+- `pytest` → **326 passed** under `QT_QPA_PLATFORM=offscreen` (321 + 5 new spec-guard tests in
+  `tests/test_build/test_spec_slimming.py`); `pytest -m acceptance` → **30 passed**.
+- Full clean `python build.py` → onedir `dist\StepShot\` = **94.4 MB, 69 files**; `StepShot.exe` = 3.1 MB.
+- `--smoke-test` → exit code **0**, wall time ~1.3 s (1.27 s / 1.46 s across two runs).
+- Before/after: the retired one-file build was ~250 MB (248.6 MB measured) and took 46–68 s to cold-start
+  (PyInstaller unpacked the bundle to `%TEMP%` on every launch); the onedir build is 94.4 MB and its
+  `--smoke-test` round-trip completes in ~1.3 s — nothing is unpacked at launch.
+
+---
+
+## Phase 20 — Inventory Persistence (Optional, Post-MVP)
 
 **Priority: Medium**
 
@@ -124,7 +161,7 @@ pytest
 
 ---
 
-## Phase 20 — Thumbnail Strip / Visual Inventory Panel (Optional)
+## Phase 21 — Thumbnail Strip / Visual Inventory Panel (Optional)
 
 **Priority: Low**
 
@@ -137,7 +174,7 @@ pytest
 
 ## Related Files
 - `upgrade.md` — Phases 1–17 history (read-only reference).
-- `AGENTS.md` — Architecture, conventions, testing notes (update Status section when Phase 18 lands).
+- `AGENTS.md` — Architecture, conventions, testing notes (Status section updated for Phase 18).
 - `models/document_history.py` — Per-screenshot history (already supports this model).
 - `ui/canvas.py` — Primary integration point.
 - `ui/toolbar.py` — New actions.

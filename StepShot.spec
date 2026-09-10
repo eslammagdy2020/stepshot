@@ -1,17 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for StepShot — single-file Windows GUI executable."""
+"""PyInstaller spec for StepShot — onedir Windows GUI build (dist/StepShot/StepShot.exe)."""
+
+from __future__ import annotations
 
 from pathlib import Path
-
-from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 project_root = Path(SPECPATH)
 
-pyside6_datas, pyside6_binaries, pyside6_hidden = collect_all("PySide6")
-pillow_datas, pillow_binaries, pillow_hidden = collect_all("PIL")
-
-# Trim unused Qt modules to keep the one-file EXE smaller.
+# Belt-and-braces module excludes; the built-in PyInstaller hooks collect only
+# what the imports in main.py and its first-party hiddenimports reference, and
+# the post-Analysis filter below strips any remaining bloat from the TOCs.
 excludes = [
     "PySide6.Qt3DAnimation",
     "PySide6.Qt3DCore",
@@ -84,15 +83,142 @@ hiddenimports = [
     "tools.pen_tool",
     "tools.step_tool",
     "tools.text_tool",
-    *pyside6_hidden,
-    *pillow_hidden,
 ]
+
+
+def _normalize(dest_name: str) -> str:
+    return dest_name.replace("\\", "/").lower()
+
+
+# Keep-list: checked first. Anything matching is never stripped, even when a
+# bloat pattern below would also match it. Covers the Qt plugin folders the app
+# needs (platforms incl. qwindows.dll/qoffscreen.dll, styles, imageformats
+# incl. qjpeg.dll/qico.dll, iconengines), the software GL fallback for RDP/VM
+# users, the core Qt/shiboken6/Python/VC runtime DLLs, and the app assets.
+_KEEP_SUBSTRINGS = (
+    "qwindows.dll",
+    "qwindowsvistastyle.dll",
+    "qjpeg.dll",
+    "qico.dll",
+    "opengl32sw.dll",
+    "qt6core.dll",
+    "qt6gui.dll",
+    "qt6widgets.dll",
+    "qt6svg.dll",
+    "pyside6.abi3.dll",
+    "shiboken6",
+    "python3",
+    "vcruntime",
+    "msvcp",
+    "concrt",
+    "vcomp",
+    "vcamp",
+    "vccorlib",
+    "ucrtbase",
+)
+
+_KEEP_SEGMENTS = (
+    "platforms",
+    "styles",
+    "imageformats",
+    "iconengines",
+    "assets",
+)
+
+# Bloat patterns, checked only after the keep-list.
+_STRIP_SUBSTRINGS = (
+    "qt6webengine",
+    "qt6qml",
+    "qt6quick",
+    "qt63d",
+    "qt6designer",
+    "qt6multimedia",
+    "qt6network",
+    "qt6sql",
+    "qt6pdf",
+    "qt6charts",
+    "qt6datavisualization",
+    "qt6graphs",
+    "qt6bluetooth",
+    "qt6sensors",
+    "qt6serialport",
+    "qt6positioning",
+    "qt6location",
+    "qt6remoteobjects",
+    "qt6scxml",
+    "qt6statemachine",
+    "qt6websockets",
+    "qt6test",
+    "qt6xml",
+    "qt6opengl",
+    "qt6dbus",
+    "qt6networkauth",
+    "qt6nfc",
+    "qt6spatialaudio",
+    "virtualkeyboard",
+)
+
+# The tls, networkinformation and generic plugin folders only exist for
+# QtNetwork/touch support; their DLLs link Qt6Network.dll, so they are dead
+# weight once that module is stripped.
+_STRIP_SEGMENTS = (
+    "translations",
+    "typesystems",
+    "qml",
+    "tls",
+    "networkinformation",
+    "generic",
+)
+
+# PySide6 extension modules the app actually imports.
+_PYSIDE6_KEEP_PYD = ("qtcore.pyd", "qtgui.pyd", "qtwidgets.pyd")
+
+
+def _keep_entry(dest_name: str) -> bool:
+    normalized = _normalize(dest_name)
+    if any(pattern in normalized for pattern in _KEEP_SUBSTRINGS):
+        return True
+    return any(segment in _KEEP_SEGMENTS for segment in normalized.split("/"))
+
+
+def _strip_entry(dest_name: str) -> bool:
+    normalized = _normalize(dest_name)
+    if any(pattern in normalized for pattern in _STRIP_SUBSTRINGS):
+        return True
+    if any(segment in _STRIP_SEGMENTS for segment in normalized.split("/")):
+        return True
+    if normalized.endswith(".qm"):
+        return True
+    segments = normalized.split("/")
+    return (
+        len(segments) > 1
+        and "pyside6" in segments[:-1]
+        and segments[-1].endswith(".pyd")
+        and segments[-1] not in _PYSIDE6_KEEP_PYD
+    )
+
+
+def _filter_toc(toc: list[tuple[str, str, str]], label: str) -> list[tuple[str, str, str]]:
+    kept: list[tuple[str, str, str]] = []
+    stripped: list[str] = []
+    for entry in toc:
+        dest_name = _normalize(entry[0])
+        if _keep_entry(entry[0]) or not _strip_entry(entry[0]):
+            kept.append(entry)
+        else:
+            stripped.append(dest_name)
+    if stripped:
+        print(f"StepShot.spec: stripped {len(stripped)} {label} entries:")
+        for dest_name in stripped:
+            print(f"  - {dest_name}")
+    return kept
+
 
 a = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root)],
-    binaries=pyside6_binaries + pillow_binaries,
-    datas=pyside6_datas + pillow_datas + [(str(project_root / "assets"), "assets")],
+    binaries=[],
+    datas=[(str(project_root / "assets"), "assets")],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -104,22 +230,21 @@ a = Analysis(
     noarchive=False,
 )
 
+a.binaries = _filter_toc(a.binaries, "binary")
+a.datas = _filter_toc(a.datas, "data")
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="StepShot",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -129,3 +254,13 @@ exe = EXE(
     icon=str(project_root / "assets" / "icon.ico"),
 )
 
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="StepShot",
+)
