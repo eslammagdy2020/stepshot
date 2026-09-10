@@ -6,17 +6,18 @@ resize) → export PNG/JPG or clipboard.
 
 ## Status
 
-**All planned phases (1–18) complete.** Last verified 2026-09-09, after the Phase 18 review-fix pass:
-`pytest` = **321 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 30 passed; frozen
-Windows build `dist\StepShot.exe` (248.6 MB, rebuilt 2026-09-09) passes its `--smoke-test` round-trip
-with exit code 0.
-See `upgrade.md` for the per-phase history and decisions. Phase 18 (Screenshot Inventory) is tracked in `upgrade-v2.md`.
+**All planned phases (1–19) complete.** Last verified 2026-09-10, after the Phase 19 verification gate:
+`pytest` = **326 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 30 passed; onedir
+build `dist\StepShot\` (94.4 MB, rebuilt 2026-09-10) passes its `--smoke-test` round-trip with exit
+code 0.
+See `upgrade.md` for the per-phase history and decisions. Phase 18 (Screenshot Inventory) is tracked in
+`upgrade-v2.md`; Phase 19 (App Size & Startup Time Reduction) in `Phase19.md`.
 
 ## Commands
 
 ```powershell
 pip install -r requirements-test.txt            # includes requirements.txt
-pytest                                          # 321 tests, ~5s — the only verification gate
+pytest                                          # 326 tests, ~5s — the only verification gate
 pytest -m acceptance                            # 30 PRD acceptance tests
 python main.py                                  # run from source
 dist\StepShot\StepShot.exe                      # run the frozen build
@@ -178,5 +179,6 @@ correctly.
 - `upgrade.md` — phased implementation plan; **Phases 1–17 complete** with decisions, acceptance
   criteria, per-phase verification commands, and post-review fix passes.
 - `upgrade-v2.md` — Phases 18+ plan (Screenshot Inventory / Multi-Screenshot Management).
+- `Phase19.md` — Phase 19 plan (App Size & Startup Time Reduction), complete and verified.
 - `CLAUDE.md` — pointer to this file.
 - `tests/README.md` — test invocation only.

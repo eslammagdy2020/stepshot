@@ -9,8 +9,9 @@ Work through tasks in order — later tasks depend on earlier ones.
 
 ### Where to start next session
 Phase 18 (Screenshot Inventory) complete and verified green (see `upgrade.md` for Phases 1–17 history).
-Phase 19 (App Size & Startup Time Reduction) in progress — see `Phase19.md`.
-Last verified baseline: `pytest` = 321 passed, `pytest -m acceptance` = 30 passed.
+Phase 19 (App Size & Startup Time Reduction) complete and verified green — see `Phase19.md`.
+Next plan starts at Phase 20 (Inventory Persistence, optional post-MVP).
+Last verified baseline: `pytest` = 326 passed, `pytest -m acceptance` = 30 passed.
 
 ---
 
@@ -130,7 +131,22 @@ the frozen build from one-file to `--onedir` (`dist\StepShot\`).
 - **Sharing via manual zip**: the user zips `dist\StepShot\` by hand for colleagues; no auto-zip
   tooling.
 
-**Verification: pending — filled by ticket 04.**
+### Verification (2026-09-10, ticket 04)
+
+```powershell
+$env:QT_QPA_PLATFORM="offscreen"; pytest
+$env:QT_QPA_PLATFORM="offscreen"; pytest -m acceptance
+python build.py
+$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot\StepShot.exe --smoke-test
+```
+
+- `pytest` → **326 passed** under `QT_QPA_PLATFORM=offscreen` (321 + 5 new spec-guard tests in
+  `tests/test_build/test_spec_slimming.py`); `pytest -m acceptance` → **30 passed**.
+- Full clean `python build.py` → onedir `dist\StepShot\` = **94.4 MB, 69 files**; `StepShot.exe` = 3.1 MB.
+- `--smoke-test` → exit code **0**, wall time ~1.3 s (1.27 s / 1.46 s across two runs).
+- Before/after: the retired one-file build was ~250 MB (248.6 MB measured) and took 46–68 s to cold-start
+  (PyInstaller unpacked the bundle to `%TEMP%` on every launch); the onedir build is 94.4 MB and its
+  `--smoke-test` round-trip completes in ~1.3 s — nothing is unpacked at launch.
 
 ---
 
