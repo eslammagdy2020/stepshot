@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for StepShot — onedir Windows GUI build (dist/StepShot/StepShot.exe)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 block_cipher = None
@@ -84,7 +86,7 @@ hiddenimports = [
 ]
 
 
-def _normalize(dest_name):
+def _normalize(dest_name: str) -> str:
     return dest_name.replace("\\", "/").lower()
 
 
@@ -172,14 +174,14 @@ _STRIP_SEGMENTS = (
 _PYSIDE6_KEEP_PYD = ("qtcore.pyd", "qtgui.pyd", "qtwidgets.pyd")
 
 
-def _keep_entry(dest_name):
+def _keep_entry(dest_name: str) -> bool:
     normalized = _normalize(dest_name)
     if any(pattern in normalized for pattern in _KEEP_SUBSTRINGS):
         return True
     return any(segment in _KEEP_SEGMENTS for segment in normalized.split("/"))
 
 
-def _strip_entry(dest_name):
+def _strip_entry(dest_name: str) -> bool:
     normalized = _normalize(dest_name)
     if any(pattern in normalized for pattern in _STRIP_SUBSTRINGS):
         return True
@@ -196,9 +198,9 @@ def _strip_entry(dest_name):
     )
 
 
-def _filter_toc(toc, label):
-    kept = []
-    stripped = []
+def _filter_toc(toc: list[tuple[str, str, str]], label: str) -> list[tuple[str, str, str]]:
+    kept: list[tuple[str, str, str]] = []
+    stripped: list[str] = []
     for entry in toc:
         dest_name = _normalize(entry[0])
         if _keep_entry(entry[0]) or not _strip_entry(entry[0]):
