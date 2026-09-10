@@ -8,8 +8,9 @@ Work through tasks in order — later tasks depend on earlier ones.
 ## Session Status
 
 ### Where to start next session
-All Phase 1–17 work complete (see `upgrade.md`). New plan starts at Phase 18.
-Last verified baseline: `pytest` = 292 passed, `pytest -m acceptance` = 26 passed.
+Phase 18 (Screenshot Inventory) complete and verified green (see `upgrade.md` for Phases 1–17 history).
+Next plan starts at Phase 19.
+Last verified baseline: `pytest` = 321 passed, `pytest -m acceptance` = 30 passed.
 
 ---
 
@@ -137,7 +138,7 @@ pytest
 
 ## Related Files
 - `upgrade.md` — Phases 1–17 history (read-only reference).
-- `AGENTS.md` — Architecture, conventions, testing notes (update Status section when Phase 18 lands).
+- `AGENTS.md` — Architecture, conventions, testing notes (Status section updated for Phase 18).
 - `models/document_history.py` — Per-screenshot history (already supports this model).
 - `ui/canvas.py` — Primary integration point.
 - `ui/toolbar.py` — New actions.

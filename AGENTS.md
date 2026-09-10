@@ -6,18 +6,18 @@ resize) → export PNG/JPG or clipboard.
 
 ## Status
 
-**All planned phases (1–17) complete.** Last verified 2026-09-07, after the Phase 17 review-fix pass:
-`pytest` = **292 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 26 passed; frozen
-Windows build `dist\StepShot.exe` (248.6 MB, rebuilt 2026-09-07) passes its `--smoke-test` round-trip
+**All planned phases (1–18) complete.** Last verified 2026-09-09, after the Phase 18 review-fix pass:
+`pytest` = **321 passed** under `QT_QPA_PLATFORM=offscreen`; `pytest -m acceptance` = 30 passed; frozen
+Windows build `dist\StepShot.exe` (248.6 MB, rebuilt 2026-09-09) passes its `--smoke-test` round-trip
 with exit code 0.
-See `upgrade.md` for the per-phase history and decisions. Future work should be tracked in a new plan file.
+See `upgrade.md` for the per-phase history and decisions. Phase 18 (Screenshot Inventory) is tracked in `upgrade-v2.md`.
 
 ## Commands
 
 ```powershell
 pip install -r requirements-test.txt            # includes requirements.txt
-pytest                                          # 292 tests, ~5s — the only verification gate
-pytest -m acceptance                            # 26 PRD acceptance tests
+pytest                                          # 321 tests, ~5s — the only verification gate
+pytest -m acceptance                            # 30 PRD acceptance tests
 python main.py                                  # run from source
 dist\StepShot.exe                               # run the frozen build
 $env:QT_QPA_PLATFORM="offscreen"; dist\StepShot.exe --smoke-test   # headless smoke gate
