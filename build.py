@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build StepShot as a standalone Windows executable using PyInstaller."""
+"""Build StepShot as a Windows onedir build (dist/StepShot/StepShot.exe) using PyInstaller."""
 
 from __future__ import annotations
 
@@ -10,7 +10,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SPEC_FILE = ROOT / "StepShot.spec"
-DIST_EXE = ROOT / "dist" / "StepShot.exe"
+DIST_DIR = ROOT / "dist" / "StepShot"
+DIST_EXE = DIST_DIR / "StepShot.exe"
+
+
+def _dist_folder_stats() -> tuple[float, int]:
+    files = [path for path in DIST_DIR.rglob("*") if path.is_file()]
+    total_bytes = sum(path.stat().st_size for path in files)
+    return total_bytes / (1024 * 1024), len(files)
 
 
 def build(*, clean: bool = True) -> Path:
@@ -41,8 +48,10 @@ def build(*, clean: bool = True) -> Path:
     if not DIST_EXE.is_file():
         raise RuntimeError(f"Build finished but executable was not found: {DIST_EXE}")
 
-    size_mb = DIST_EXE.stat().st_size / (1024 * 1024)
-    print(f"Success: {DIST_EXE} ({size_mb:.1f} MB)")
+    exe_mb = DIST_EXE.stat().st_size / (1024 * 1024)
+    folder_mb, file_count = _dist_folder_stats()
+    print(f"Success: {DIST_EXE} ({exe_mb:.1f} MB)")
+    print(f"Success: {DIST_DIR} ({folder_mb:.1f} MB, {file_count} files)")
     return DIST_EXE
 
 
