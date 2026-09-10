@@ -9,7 +9,7 @@ Work through tasks in order — later tasks depend on earlier ones.
 
 ### Where to start next session
 Phase 18 (Screenshot Inventory) complete and verified green (see `upgrade.md` for Phases 1–17 history).
-Next plan starts at Phase 19.
+Phase 19 (App Size & Startup Time Reduction) in progress — see `Phase19.md`.
 Last verified baseline: `pytest` = 321 passed, `pytest -m acceptance` = 30 passed.
 
 ---
@@ -114,7 +114,27 @@ pytest
 
 ---
 
-## Phase 19 — Inventory Persistence (Optional, Post-MVP)
+## Phase 19 — App Size & Startup Time Reduction
+
+**Priority: High — distribution quality**
+
+Spec: `Phase19.md` (single source of truth). One-line summary: slim the PyInstaller spec and switch
+the frozen build from one-file to `--onedir` (`dist\StepShot\`).
+
+### Key Decisions
+- **Onedir only; onefile retired**: `dist\StepShot\` is the sole distribution format — no build flag,
+  no single-exe fallback. The one-file unpack-to-`%TEMP%` cold start was the core problem.
+- **`opengl32sw.dll` kept**: the ~20 MB software-GL fallback stays as insurance for RDP/VM users
+  without hardware acceleration.
+- **UPX rejected**: it breaks Qt6 vtables/relocations and triggers antivirus false positives.
+- **Sharing via manual zip**: the user zips `dist\StepShot\` by hand for colleagues; no auto-zip
+  tooling.
+
+**Verification: pending — filled by ticket 04.**
+
+---
+
+## Phase 20 — Inventory Persistence (Optional, Post-MVP)
 
 **Priority: Medium**
 
@@ -125,7 +145,7 @@ pytest
 
 ---
 
-## Phase 20 — Thumbnail Strip / Visual Inventory Panel (Optional)
+## Phase 21 — Thumbnail Strip / Visual Inventory Panel (Optional)
 
 **Priority: Low**
 

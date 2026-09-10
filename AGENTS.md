@@ -19,9 +19,9 @@ pip install -r requirements-test.txt            # includes requirements.txt
 pytest                                          # 321 tests, ~5s — the only verification gate
 pytest -m acceptance                            # 30 PRD acceptance tests
 python main.py                                  # run from source
-dist\StepShot.exe                               # run the frozen build
-$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot.exe --smoke-test   # headless smoke gate
-pip install -r requirements-build.txt; python build.py            # → dist/StepShot.exe (~250 MB one-file)
+dist\StepShot\StepShot.exe                      # run the frozen build
+$env:QT_QPA_PLATFORM="offscreen"; dist\StepShot\StepShot.exe --smoke-test   # headless smoke gate
+pip install -r requirements-build.txt; python build.py            # → dist/StepShot/ (onedir)
 ```
 
 There is **no linter, formatter, type checker, or codegen step** in this repo — no ruff/black/mypy config
